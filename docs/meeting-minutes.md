@@ -3,7 +3,7 @@
 
 ---
 
-## Meeting Date :  19 August 2026
+## Meeting Date :  12 August 2026
 **Attendees:** Parth Patel, Preetkumar Navinbhai Patel, Thiwanka Kaushalya Nagasanga
 **Team leader this period:**
 
