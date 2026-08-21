@@ -19,7 +19,7 @@ Usage:
 import secrets
 
 try:
-    from fastapi import FastAPI, HTTPException
+    from fastapi import APIRouter, FastAPI, HTTPException
     from pydantic import BaseModel
     FASTAPI_AVAILABLE = True
 except ImportError:
@@ -31,8 +31,10 @@ CLIENT_ID = "ai-finance-advisor-dev"
 REDIRECT_URI = "http://localhost:3000/oauth/callback"
 
 
-def create_app():
-    """Build the FastAPI app. Raises if fastapi/pydantic aren't installed."""
+def create_router():
+    """Build the APIRouter for the link-account flow, so it can be mounted
+    into another FastAPI app (see backend/api/main.py). Raises if
+    fastapi/pydantic aren't installed."""
     if not FASTAPI_AVAILABLE:
         raise RuntimeError(
             "fastapi/pydantic not installed. Run: pip install fastapi uvicorn pydantic"
@@ -43,11 +45,11 @@ def create_app():
         state: str
         client_secret: str = "dev-secret"
 
-    app = FastAPI(title="Expense Tracking & OCR - Link Account API")
+    router = APIRouter(tags=["link-account"])
     provider = MockSandboxProvider()
     pending_states = {}
 
-    @app.post("/link-account")
+    @router.post("/link-account")
     def link_account():
         """Step 1: user clicks "Link account" in the web app.
 
@@ -61,7 +63,7 @@ def create_app():
         pending_states[returned_state] = auth_code
         return {"auth_code": auth_code, "state": returned_state, "redirect_uri": REDIRECT_URI}
 
-    @app.post("/link-account/callback")
+    @router.post("/link-account/callback")
     def link_account_callback(payload: CallbackRequest):
         """Step 2: provider redirects back with an authorisation code.
 
@@ -87,7 +89,16 @@ def create_app():
             "expires_in": token_response["expires_in"],
         }
 
+    return router
+
+
+def create_app():
+    """Build a standalone FastAPI app wrapping the router, for running this
+    module on its own (uvicorn link_account_api:app --reload)."""
+    app = FastAPI(title="Expense Tracking & OCR - Link Account API")
+    app.include_router(create_router())
     return app
 
 
+router = create_router() if FASTAPI_AVAILABLE else None
 app = create_app() if FASTAPI_AVAILABLE else None
