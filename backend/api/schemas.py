@@ -1,6 +1,6 @@
-"""Pydantic request/response models for the auth and users routes."""
+"""Pydantic request/response models for the auth, users, budgets, and forecasts routes."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -28,3 +28,27 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class BudgetOut(BaseModel):
+    budget_id: int
+    category_id: int
+    category_name: str
+    period_month: date
+    recommended_amount: float
+    months_considered: int
+    generated_by: str
+
+
+class ForecastPoint(BaseModel):
+    forecast_date: date
+    predicted_balance: float
+    lower_bound: float | None = None
+    upper_bound: float | None = None
+
+
+class ForecastResponse(BaseModel):
+    account_id: int
+    method: str
+    days_ahead: int
+    forecast: list[ForecastPoint]
