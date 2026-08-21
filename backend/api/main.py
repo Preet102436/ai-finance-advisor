@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # backend/expense-ocr and backend/budgeting-forecasting use hyphens in their
 # directory names, so they can't be imported as normal dotted packages - add
@@ -40,6 +41,15 @@ from routers import (  # noqa: E402
 )
 
 app = FastAPI(title="AI-Powered Personal Finance Advisor")
+
+# Allow the local Vite dev server (frontend/) to call this API cross-origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(auth.router)
 app.include_router(users.router)
