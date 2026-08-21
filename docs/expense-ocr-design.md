@@ -2,7 +2,8 @@
 
 **Owner:** Preetkumar Navinbhai Patel (Expense Tracking & OCR, Backend Architecture)
 **Status:** Bank sandbox auth flow and OCR pipeline designed; stubs implemented
-(see `backend/expense-ocr/`).
+(see `backend/expense-ocr/`). Main backend scaffolded with DB connection, auth,
+and router stubs (see `backend/api/`).
 
 ## Purpose
 Automatically sync bank transactions from a sandbox Open Banking-style API, and allow
@@ -36,6 +37,12 @@ users to photograph receipts, which are OCR-scanned and auto-categorised.
 - [x] Keyword classifier expanded with more brands/terms and three new categories
       (entertainment, health, shopping); unit tests added (`test_ocr_prototype.py`,
       pytest) covering the new sample receipts
+- [x] Main FastAPI backend scaffolded (`backend/api/`): SQLAlchemy connection to
+      Postgres via `db/schema.sql` and a `.env`-based config, bcrypt-hashed
+      `/auth/register` + `/auth/login` issuing JWTs, protected `/users/me`, empty
+      TODO-commented stubs for `/transactions`, `/budgets`, `/forecasts`,
+      `/receipts`, `/chat`, `/savings`, `/settings`, and `link_account_api.py`'s
+      router mounted in
 - [ ] Auto-categorisation upgraded from keyword rules to a trained classifier
 - [ ] Live scheduled sync job (planned for Weeks 7-8)
 
