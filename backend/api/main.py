@@ -14,10 +14,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# backend/expense-ocr and backend/budgeting-forecasting use hyphens in their
-# directory names, so they can't be imported as normal dotted packages - add
-# them to sys.path instead so we can import their modules directly, the same
-# way each subsystem's own README does.
+# backend/expense-ocr, backend/budgeting-forecasting, and backend/chatbot-savings
+# use hyphens in their directory names, so they can't be imported as normal
+# dotted packages - add them to sys.path instead so we can import their
+# modules directly, the same way each subsystem's own README does.
 EXPENSE_OCR_DIR = Path(__file__).resolve().parent.parent / "expense-ocr"
 if str(EXPENSE_OCR_DIR) not in sys.path:
     sys.path.insert(0, str(EXPENSE_OCR_DIR))
@@ -25,6 +25,10 @@ if str(EXPENSE_OCR_DIR) not in sys.path:
 BUDGETING_FORECASTING_DIR = Path(__file__).resolve().parent.parent / "budgeting-forecasting"
 if str(BUDGETING_FORECASTING_DIR) not in sys.path:
     sys.path.insert(0, str(BUDGETING_FORECASTING_DIR))
+
+CHATBOT_SAVINGS_DIR = Path(__file__).resolve().parent.parent / "chatbot-savings"
+if str(CHATBOT_SAVINGS_DIR) not in sys.path:
+    sys.path.insert(0, str(CHATBOT_SAVINGS_DIR))
 
 from link_account_api import create_router as create_link_account_router  # noqa: E402
 

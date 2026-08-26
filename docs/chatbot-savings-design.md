@@ -2,7 +2,9 @@
 
 **Owner:** Thiwanka Kaushalya Nagasanga (Conversational Chatbot / Savings Recommendation)
 **Status:** RAG architecture defined; prototype retrieval + prompt flow implemented
-(see `backend/chatbot-savings/`).
+(see `backend/chatbot-savings/`). Real `POST /chat/messages` now retrieves the
+current user's actual transactions/budgets, builds the grounded prompt, and logs
+the exchange to `chat_messages` (see `backend/api/routers/chat.py`).
 
 ## Purpose
 Provide a conversational assistant that answers questions about the user's own finances,
@@ -37,11 +39,27 @@ generate practical savings suggestions.
       suggestion per over-budget category (names the driving merchant and recommends
       cutting visit frequency or switching to a cheaper alternative), fed into the
       constructed prompt
+- [x] `POST /chat/messages` implemented in `backend/api/routers/chat.py`: loads the
+      current user's real transactions (last 90 days) and most-recent-per-category
+      budgets from the database, reuses `chatbot_prototype.py`'s
+      `retrieve_relevant_transactions`/`build_prompt`/`call_llm` (both retrieval and
+      prompt-building were lightly parameterised to accept real data instead of
+      `SAMPLE_TRANSACTIONS`/`SAMPLE_BUDGETS`, with those still the defaults so the
+      script's standalone/offline behaviour is unchanged), and logs both the
+      question and the answer - with the retrieved context attached to the
+      assistant's row - into `chat_messages`
+- [x] Integration test (`backend/api/test_chat.py`, pytest) covering the full flow
+      against a real user/account/transactions/budget, asserting the retrieved
+      context is the real data and that sample data never leaks into it
 - [ ] Replace simple filtering retrieval with vector-similarity retrieval over a larger
       transaction history
-- [ ] Connect prototype to live `transactions`/`budgets` data once available
+- [ ] No `OPENAI_API_KEY` configured in the dev environment, so `/chat/messages` is
+      exercised end-to-end but always through `call_llm()`'s offline fallback path
+      (returns a preview of the prompt instead of a real model response)
+- [ ] `GET /chat/messages` (chat history) still TODO
 
 ## Next Steps
 - Evaluate prototype responses against a small set of test questions for accuracy and
   tone before Week 9.
 - Add guardrails so responses are clearly framed as suggestions, not financial advice.
+- Set a real `OPENAI_API_KEY` in a deployed environment and verify actual model output.
