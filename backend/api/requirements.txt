@@ -9,3 +9,6 @@ pydantic
 email-validator
 pytest
 httpx
+python-multipart
+pytesseract
+pillow

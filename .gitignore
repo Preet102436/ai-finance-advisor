@@ -14,5 +14,8 @@ venv/
 node_modules/
 dist/
 
+# Uploaded files (local dev only)
+backend/api/uploads/
+
 # Editor/OS
 .DS_Store
