@@ -54,9 +54,21 @@ users to photograph receipts, which are OCR-scanned and auto-categorised.
 - [x] Integration test (`backend/api/test_bank_sync.py`, pytest) exercising
       register -> login -> link-account -> callback -> sync end-to-end and confirming
       the synced rows land in the database, plus a re-sync produces no duplicates
+- [x] `POST /receipts/upload` (`backend/api/routers/receipts.py`): accepts an image
+      upload, runs `ocr_prototype.py`'s `extract_text`/`extract_total`/
+      `classify_category`, writes matching `receipts` (with the raw OCR text) and
+      `transactions` (`source='receipt_ocr'`) rows, and returns the predicted
+      category/total. Tesseract itself isn't installed in the current dev
+      environment, so a real image upload correctly surfaces a 503 pointing at that;
+      `backend/api/test_receipts_upload.py` covers the endpoint end-to-end by
+      patching `extract_text()` to return sample OCR text (mirroring how
+      `ocr_prototype.py`'s own tests use `process_receipt_from_text`)
 - [ ] Auto-categorisation upgraded from keyword rules to a trained classifier
 - [ ] Live scheduled sync job (planned for Weeks 7-8) - `/bank/sync` above is
       user-triggered, not yet a scheduled job
+- [ ] Tesseract OCR engine not installed in the dev environment - `/receipts/upload`
+      is wired up and tested (via mocked OCR output) but not yet exercised against a
+      real image end-to-end
 
 ## Next Steps
 - Connect the OAuth2 flow to a registered sandbox app (currently tested with mock
@@ -64,3 +76,5 @@ users to photograph receipts, which are OCR-scanned and auto-categorised.
 - Expand the keyword categoriser into a small trained NLP model using labelled sample
   receipts.
 - Turn `/bank/sync` into a scheduled job instead of a manually-triggered endpoint.
+- Install the Tesseract system binary in dev/CI so `/receipts/upload` can be verified
+  against real receipt images, not just mocked OCR output.
