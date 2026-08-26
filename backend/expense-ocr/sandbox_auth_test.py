@@ -15,6 +15,7 @@ import base64
 import hashlib
 import secrets
 import time
+from datetime import date, timedelta
 
 
 class MockSandboxProvider:
@@ -58,6 +59,22 @@ def external_ref_for_storage(access_token):
     even if the database were compromised - the real token lives in a separate,
     more tightly-controlled secrets store in the full implementation."""
     return hashlib.sha256(access_token.encode()).hexdigest()
+
+
+def mock_transactions():
+    """Canned transaction data standing in for a call to the sandbox's
+    /transactions endpoint, until real Open Banking credentials are approved.
+    Dates are relative to today so synced data always looks recent."""
+    today = date.today()
+    return [
+        {"date": today - timedelta(days=9), "amount": -45.20, "description": "Weekly groceries", "merchant": "Woolworths", "category": "groceries"},
+        {"date": today - timedelta(days=8), "amount": -12.50, "description": "Coffee", "merchant": "Cafe Nero", "category": "dining"},
+        {"date": today - timedelta(days=7), "amount": -89.00, "description": "Electricity bill", "merchant": "EnergyCo", "category": "utilities"},
+        {"date": today - timedelta(days=5), "amount": -9.99, "description": "Streaming subscription", "merchant": "Netflix", "category": "subscriptions"},
+        {"date": today - timedelta(days=4), "amount": -52.10, "description": "Groceries", "merchant": "Coles", "category": "groceries"},
+        {"date": today - timedelta(days=2), "amount": 2500.00, "description": "Salary", "merchant": "Employer Pty Ltd", "category": "income"},
+        {"date": today - timedelta(days=1), "amount": -15.30, "description": "Lunch", "merchant": "Cafe Nero", "category": "dining"},
+    ]
 
 
 def run_flow_test():
