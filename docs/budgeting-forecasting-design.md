@@ -3,8 +3,9 @@
 **Owner:** Parth Patel (Budgeting & Forecasting)
 **Status:** Data inputs/outputs and model approach defined; prototype forecasting script
 implemented against sample transaction data (see `backend/budgeting-forecasting/`).
-Real `/budgets/recommend` and `/forecasts` endpoints now read live transactions and
-write to the database (see `backend/api/routers/budgets.py` and `forecasts.py`).
+Real `/budgets/recommend`, `/forecasts`, and `/anomalies` endpoints now read live
+transactions and write to the database (see `backend/api/routers/budgets.py`,
+`forecasts.py`, and `anomalies.py`).
 
 ## Purpose
 Generate a personalised monthly budget per category and forecast a user's near-term
@@ -46,11 +47,21 @@ account balance, flagging when a predicted balance is likely to go low.
   account's daily net cash-flow from real transactions, runs `forecast_balance()`
   (Prophet if available, moving-average fallback otherwise), and stores the result
   into `forecasts`
+- [x] `POST /anomalies` implemented in `backend/api/routers/anomalies.py`: runs
+  `detect_anomalies()` against the current user's real transactions (last 180 days
+  by default, one category per z-score group), upserts flagged rows into
+  `anomalies` (score + reason, keyed by `transaction_id`), and returns the current
+  list of flagged transactions with their z-scores. Covered end-to-end by
+  `backend/api/test_anomalies.py` (10 normal transactions + 1 outlier, same shape
+  as `test_forecast_prototype.py`'s own outlier test, since a lone outlier needs
+  enough peers in its category before it reliably clears `z_threshold=3.0`)
 - [ ] Tuning of the anomaly threshold using a larger sample dataset
-- [ ] Wire anomaly detection (`detect_anomalies`) into a real endpoint/table write
 - [ ] Prophet not yet installed in `backend/api/requirements.txt` (moving-average
   fallback is exercised by default; add it once we want real confidence intervals)
 
 ## Next Steps
 - Add unit tests for the budget-recommendation calculation.
-- Add a real `GET /budgets` and `GET /forecasts` for listing stored results.
+- Add a real `GET /budgets`, `GET /forecasts`, and `GET /anomalies` for listing
+  stored results.
+- `/anomalies` is user-triggered, not yet run automatically as new transactions
+  arrive (e.g. right after `/bank/sync`).
