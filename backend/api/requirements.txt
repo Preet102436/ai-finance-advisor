@@ -7,3 +7,5 @@ bcrypt
 pyjwt
 pydantic
 email-validator
+pytest
+httpx
