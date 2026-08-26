@@ -52,3 +52,15 @@ class ForecastResponse(BaseModel):
     method: str
     days_ahead: int
     forecast: list[ForecastPoint]
+
+
+class AnomalyOut(BaseModel):
+    anomaly_id: int
+    transaction_id: int
+    category_id: int
+    category_name: str
+    txn_date: date
+    amount: float
+    merchant: str | None = None
+    z_score: float
+    reason: str

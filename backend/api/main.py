@@ -32,6 +32,7 @@ from database import get_db  # noqa: E402
 from deps import get_current_user  # noqa: E402
 from models import BankAccount  # noqa: E402
 from routers import (  # noqa: E402
+    anomalies,
     auth,
     bank,
     budgets,
@@ -83,6 +84,7 @@ app.include_router(users.router)
 app.include_router(transactions.router)
 app.include_router(budgets.router)
 app.include_router(forecasts.router)
+app.include_router(anomalies.router)
 app.include_router(receipts.router)
 app.include_router(chat.router)
 app.include_router(savings.router)
