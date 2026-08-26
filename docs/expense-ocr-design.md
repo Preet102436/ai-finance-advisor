@@ -43,11 +43,38 @@ users to photograph receipts, which are OCR-scanned and auto-categorised.
       TODO-commented stubs for `/transactions`, `/budgets`, `/forecasts`,
       `/receipts`, `/chat`, `/savings`, `/settings`, and `link_account_api.py`'s
       router mounted in
+- [x] `/bank/link-account` and `/bank/link-account/callback` wired into the real app
+      with auth + a DB session (`link_account_api.create_router()` now takes optional
+      `on_link_success`/dependency hooks, wired in `backend/api/main.py`); the callback
+      writes a real `bank_accounts` row with the hashed `external_ref`. Running
+      `link_account_api.py` standalone still works with no auth/persistence.
+- [x] `POST /bank/sync` (`backend/api/routers/bank.py`): reads the sandbox's mocked
+      transaction data (`sandbox_auth_test.mock_transactions()`, new) and inserts
+      `transactions` rows with `source='bank_sync'`, skipping rows already synced
+- [x] Integration test (`backend/api/test_bank_sync.py`, pytest) exercising
+      register -> login -> link-account -> callback -> sync end-to-end and confirming
+      the synced rows land in the database, plus a re-sync produces no duplicates
+- [x] `POST /receipts/upload` (`backend/api/routers/receipts.py`): accepts an image
+      upload, runs `ocr_prototype.py`'s `extract_text`/`extract_total`/
+      `classify_category`, writes matching `receipts` (with the raw OCR text) and
+      `transactions` (`source='receipt_ocr'`) rows, and returns the predicted
+      category/total. Tesseract itself isn't installed in the current dev
+      environment, so a real image upload correctly surfaces a 503 pointing at that;
+      `backend/api/test_receipts_upload.py` covers the endpoint end-to-end by
+      patching `extract_text()` to return sample OCR text (mirroring how
+      `ocr_prototype.py`'s own tests use `process_receipt_from_text`)
 - [ ] Auto-categorisation upgraded from keyword rules to a trained classifier
-- [ ] Live scheduled sync job (planned for Weeks 7-8)
+- [ ] Live scheduled sync job (planned for Weeks 7-8) - `/bank/sync` above is
+      user-triggered, not yet a scheduled job
+- [ ] Tesseract OCR engine not installed in the dev environment - `/receipts/upload`
+      is wired up and tested (via mocked OCR output) but not yet exercised against a
+      real image end-to-end
 
 ## Next Steps
 - Connect the OAuth2 flow to a registered sandbox app (currently tested with mock
   responses) once sandbox credentials are approved.
 - Expand the keyword categoriser into a small trained NLP model using labelled sample
   receipts.
+- Turn `/bank/sync` into a scheduled job instead of a manually-triggered endpoint.
+- Install the Tesseract system binary in dev/CI so `/receipts/upload` can be verified
+  against real receipt images, not just mocked OCR output.

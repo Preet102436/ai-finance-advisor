@@ -26,10 +26,14 @@ BUDGETING_FORECASTING_DIR = Path(__file__).resolve().parent.parent / "budgeting-
 if str(BUDGETING_FORECASTING_DIR) not in sys.path:
     sys.path.insert(0, str(BUDGETING_FORECASTING_DIR))
 
-from link_account_api import router as link_account_router  # noqa: E402
+from link_account_api import create_router as create_link_account_router  # noqa: E402
 
+from database import get_db  # noqa: E402
+from deps import get_current_user  # noqa: E402
+from models import BankAccount  # noqa: E402
 from routers import (  # noqa: E402
     auth,
+    bank,
     budgets,
     chat,
     forecasts,
@@ -41,6 +45,29 @@ from routers import (  # noqa: E402
 )
 
 app = FastAPI(title="AI-Powered Personal Finance Advisor")
+
+
+def _persist_linked_account(db, user_id, external_ref):
+    """Wired into link_account_api.py's router as on_link_success, so
+    /bank/link-account/callback writes a real bank_accounts row."""
+    account = BankAccount(
+        user_id=user_id,
+        provider_name="sandbox-bank",
+        external_ref=external_ref,
+        account_type="checking",
+        currency="AUD",
+    )
+    db.add(account)
+    db.commit()
+    db.refresh(account)
+    return account.account_id
+
+
+link_account_router = create_link_account_router(
+    on_link_success=_persist_linked_account,
+    get_db_dependency=get_db,
+    get_current_user_dependency=get_current_user,
+)
 
 # Allow the local Vite dev server (frontend/) to call this API cross-origin.
 app.add_middleware(
@@ -60,7 +87,8 @@ app.include_router(receipts.router)
 app.include_router(chat.router)
 app.include_router(savings.router)
 app.include_router(settings.router)
-app.include_router(link_account_router)
+app.include_router(link_account_router, prefix="/bank")
+app.include_router(bank.router)
 
 
 @app.get("/health")
