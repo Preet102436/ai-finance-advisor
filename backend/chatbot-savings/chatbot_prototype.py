@@ -11,6 +11,10 @@ To actually call an LLM, set an API key as an environment variable and install t
 OpenAI SDK: pip install openai --break-system-packages
 This script runs fully offline (prints the constructed prompt) if no API key is set,
 which is enough to test and demonstrate the retrieval + prompt-construction logic.
+
+backend/api/routers/chat.py wires this retrieval/prompt/LLM logic into a real
+POST /chat/messages endpoint, swapping SAMPLE_TRANSACTIONS/SAMPLE_BUDGETS for
+the current user's real transactions/budgets from the database.
 """
 
 import os
@@ -32,11 +36,16 @@ SAMPLE_BUDGETS = {
 }
 
 
-def retrieve_relevant_transactions(question, transactions=SAMPLE_TRANSACTIONS):
+def retrieve_relevant_transactions(question, transactions=SAMPLE_TRANSACTIONS, known_categories=None):
     """Prototype retrieval: filters by any category name mentioned in the question.
-    Falls back to returning the most recent transactions if no category matches."""
+    Falls back to returning the most recent transactions if no category matches.
+
+    `known_categories` defaults to the sample budget categories (unchanged
+    standalone behaviour); callers with real data pass in the user's actual
+    budget/category names instead."""
     question_lower = question.lower()
-    matched_categories = [c for c in SAMPLE_BUDGETS if c in question_lower]
+    categories_to_match = known_categories if known_categories is not None else SAMPLE_BUDGETS.keys()
+    matched_categories = [c for c in categories_to_match if c in question_lower]
 
     if matched_categories:
         results = [t for t in transactions if t["category"] in matched_categories]
@@ -120,17 +129,17 @@ def generate_savings_suggestions(transactions, budgets=SAMPLE_BUDGETS):
     return suggestions
 
 
-def build_prompt(question, retrieved):
+def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS):
     context = build_context_block(retrieved)
     category_totals = category_totals_for(retrieved)
 
     budget_lines = []
     for cat, total in category_totals.items():
-        budget = SAMPLE_BUDGETS.get(cat)
+        budget = budgets.get(cat)
         if budget:
             budget_lines.append(f"- {cat}: spent {abs(total):.2f} of a {budget:.2f} budget")
 
-    suggestion_lines = generate_savings_suggestions(retrieved)
+    suggestion_lines = generate_savings_suggestions(retrieved, budgets)
 
     prompt = f"""You are a helpful personal finance assistant. Answer the user's question
 using ONLY the transaction data provided below. Be specific and concise, and clearly
