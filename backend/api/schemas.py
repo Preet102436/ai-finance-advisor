@@ -54,6 +54,23 @@ class ForecastResponse(BaseModel):
     forecast: list[ForecastPoint]
 
 
+class CategoryOut(BaseModel):
+    category_id: int
+    name: str
+
+
+class TransactionOut(BaseModel):
+    transaction_id: int
+    account_id: int
+    category_id: int | None = None
+    category_name: str | None = None
+    amount: float
+    description: str | None = None
+    merchant: str | None = None
+    txn_date: date
+    source: str
+
+
 class AnomalyOut(BaseModel):
     anomaly_id: int
     transaction_id: int
