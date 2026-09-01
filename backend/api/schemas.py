@@ -71,6 +71,15 @@ class TransactionOut(BaseModel):
     source: str
 
 
+class SavingsSuggestionOut(BaseModel):
+    category: str
+    overspend: float
+    top_merchant: str | None = None
+    merchant_total_spent: float | None = None
+    merchant_visit_count: int | None = None
+    suggestion: str
+
+
 class AnomalyOut(BaseModel):
     anomaly_id: int
     transaction_id: int
