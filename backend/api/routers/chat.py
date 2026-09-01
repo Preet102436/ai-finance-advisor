@@ -9,8 +9,6 @@ TODO (not implemented yet):
 - GET /chat/messages   fetch current user's chat history
 """
 
-from datetime import date, timedelta
-
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -18,7 +16,8 @@ from sqlalchemy.orm import Session
 from chatbot_prototype import build_context_block, build_prompt, call_llm, retrieve_relevant_transactions
 from database import get_db
 from deps import get_current_user
-from models import BankAccount, Budget, Category, ChatMessage, Transaction, User
+from finance_data import load_user_budgets, load_user_transactions
+from models import ChatMessage, User
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -33,54 +32,14 @@ class ChatResponse(BaseModel):
     retrieved_context: str
 
 
-def _load_user_transactions(db: Session, user_id: int, lookback_days: int = 90):
-    """Real transactions in chatbot_prototype's expected shape:
-    {date, category, amount, merchant}."""
-    window_start = date.today() - timedelta(days=lookback_days)
-    rows = (
-        db.query(Transaction, Category.name)
-        .join(BankAccount, Transaction.account_id == BankAccount.account_id)
-        .outerjoin(Category, Transaction.category_id == Category.category_id)
-        .filter(BankAccount.user_id == user_id, Transaction.txn_date >= window_start)
-        .all()
-    )
-    return [
-        {
-            "date": txn.txn_date.isoformat(),
-            "category": category_name or "uncategorised",
-            "amount": float(txn.amount),
-            "merchant": txn.merchant or "",
-        }
-        for txn, category_name in rows
-    ]
-
-
-def _load_user_budgets(db: Session, user_id: int):
-    """Real budgets in chatbot_prototype's expected shape: {category: amount},
-    using each category's most recently generated budget."""
-    rows = (
-        db.query(Budget, Category.name)
-        .join(Category, Budget.category_id == Category.category_id)
-        .filter(Budget.user_id == user_id)
-        .order_by(Budget.period_month.desc())
-        .all()
-    )
-    budgets = {}
-    for budget, category_name in rows:
-        # Ordered most-recent period_month first, so the first time we see a
-        # category is its latest budget.
-        budgets.setdefault(category_name, float(budget.recommended_amount))
-    return budgets
-
-
 @router.post("/messages", response_model=ChatResponse)
 def send_message(
     payload: ChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    transactions = _load_user_transactions(db, current_user.user_id)
-    budgets = _load_user_budgets(db, current_user.user_id)
+    transactions = load_user_transactions(db, current_user.user_id, lookback_days=90)
+    budgets = load_user_budgets(db, current_user.user_id)
 
     retrieved = retrieve_relevant_transactions(
         payload.question, transactions=transactions, known_categories=budgets.keys()
@@ -89,10 +48,15 @@ def send_message(
     retrieved_context = build_context_block(retrieved)
 
     answer = call_llm(prompt)
-    if answer is None:
+    if not answer:
+        # None: no OPENAI_API_KEY configured. Empty string: the model call
+        # succeeded but returned no content (seen with real "gpt-5" calls) -
+        # either way there's no real answer to show, so fall back to a
+        # preview of what would have been sent.
         answer = (
-            "(No LLM API key configured on the server, so this is a preview of what "
-            "would have been sent - not a real answer.)\n\n" + prompt
+            "(No usable LLM response - either no API key is configured on the server, "
+            "or the model returned an empty reply. Here's a preview of what would have "
+            "been sent.)\n\n" + prompt
         )
 
     db.add(ChatMessage(user_id=current_user.user_id, role="user", content=payload.question))

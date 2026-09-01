@@ -4,7 +4,9 @@
 **Status:** RAG architecture defined; prototype retrieval + prompt flow implemented
 (see `backend/chatbot-savings/`). Real `POST /chat/messages` now retrieves the
 current user's actual transactions/budgets, builds the grounded prompt, and logs
-the exchange to `chat_messages` (see `backend/api/routers/chat.py`).
+the exchange to `chat_messages` (see `backend/api/routers/chat.py`). Real
+`GET /savings/suggestions` now exposes the savings-suggestion logic over real data
+(see `backend/api/routers/savings.py`).
 
 ## Purpose
 Provide a conversational assistant that answers questions about the user's own finances,
@@ -51,15 +53,35 @@ generate practical savings suggestions.
 - [x] Integration test (`backend/api/test_chat.py`, pytest) covering the full flow
       against a real user/account/transactions/budget, asserting the retrieved
       context is the real data and that sample data never leaks into it
+- [x] `generate_savings_suggestions()` split into a structured
+      `generate_savings_suggestions_detailed()` (returns category, overspend,
+      driving merchant + visit count, and the suggestion sentence per over-budget
+      category) with the original string-list function now a thin wrapper over it,
+      so `build_prompt()`/`/chat/messages` are unaffected
+- [x] `GET /savings/suggestions` implemented in `backend/api/routers/savings.py`:
+      compares the current user's real this-month spend per category (via the new
+      shared `backend/api/finance_data.py` loaders, also now used by
+      `/chat/messages`) against their most recent budget, and returns a suggestion
+      per over-budget category naming the category and the merchant/visit-count
+      driving it. Covered by `backend/api/test_savings.py` (names the right
+      merchant/visit count; categories under budget are correctly not suggested)
 - [ ] Replace simple filtering retrieval with vector-similarity retrieval over a larger
       transaction history
-- [ ] No `OPENAI_API_KEY` configured in the dev environment, so `/chat/messages` is
-      exercised end-to-end but always through `call_llm()`'s offline fallback path
-      (returns a preview of the prompt instead of a real model response)
+- [ ] A real `OPENAI_API_KEY` is now set locally, which surfaced two real bugs:
+      `call_llm()` passed `max_tokens` (fixed here - the API now requires
+      `max_completion_tokens` for this model), and the model still returns an
+      *empty* response for our prompt even after that fix (root cause unknown -
+      needs a maintainer who can spend real API credits investigating it).
+      `/chat/messages` degrades gracefully either way - it now falls back to
+      previewing the prompt whenever `call_llm()` returns `None` OR `""`
+      (previously only checked for `None`, so an empty-but-"successful" call
+      would have silently stored a blank assistant message)
 - [ ] `GET /chat/messages` (chat history) still TODO
+- [ ] `/savings/suggestions` is read-only (no `savings_goals` table exists yet);
+      goal-setting (`GET`/`POST /savings/goals`) still TODO
 
 ## Next Steps
 - Evaluate prototype responses against a small set of test questions for accuracy and
   tone before Week 9.
 - Add guardrails so responses are clearly framed as suggestions, not financial advice.
-- Set a real `OPENAI_API_KEY` in a deployed environment and verify actual model output.
+- Investigate the empty-response issue from the real `gpt-5` model (see above).

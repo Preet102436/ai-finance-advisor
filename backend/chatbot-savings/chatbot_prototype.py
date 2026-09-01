@@ -100,33 +100,50 @@ def top_merchant_in_category(transactions, category):
     }
 
 
-def generate_savings_suggestions(transactions, budgets=SAMPLE_BUDGETS):
-    """Generates a specific, actionable savings suggestion for each category that is
-    over budget - naming the merchant driving the overspend and recommending either
-    cutting back on visit frequency or switching to a cheaper alternative, rather than
-    a generic 'spend less' message."""
+def generate_savings_suggestions_detailed(transactions, budgets=SAMPLE_BUDGETS):
+    """Like generate_savings_suggestions, but returns one structured dict per
+    over-budget category (category, overspend, driving merchant, suggestion
+    text) instead of just the sentence - so a caller like a real API endpoint
+    can surface the category/merchant fields directly instead of re-parsing
+    the suggestion string."""
     over_budget = detect_over_budget_categories(category_totals_for(transactions), budgets)
 
     suggestions = []
     for cat, overspend in over_budget.items():
         top_merchant = top_merchant_in_category(transactions, cat)
         if top_merchant is None:
-            suggestions.append(f"You're ${overspend:.2f} over your {cat} budget this month.")
+            text = f"You're ${overspend:.2f} over your {cat} budget this month."
         elif top_merchant["visit_count"] > 1:
-            suggestions.append(
+            text = (
                 f"You're ${overspend:.2f} over your {cat} budget this month, largely driven by "
                 f"{top_merchant['visit_count']} visits to {top_merchant['merchant']} "
                 f"(${top_merchant['total_spent']:.2f} total). Consider cutting back to fewer "
                 f"visits a week, or switching to a cheaper alternative nearby."
             )
         else:
-            suggestions.append(
+            text = (
                 f"You're ${overspend:.2f} over your {cat} budget this month, largely driven by "
                 f"a single ${top_merchant['total_spent']:.2f} transaction at "
                 f"{top_merchant['merchant']}. Worth checking whether that was a one-off or a "
                 f"pattern to budget for going forward."
             )
+        suggestions.append({
+            "category": cat,
+            "overspend": overspend,
+            "top_merchant": top_merchant["merchant"] if top_merchant else None,
+            "merchant_total_spent": top_merchant["total_spent"] if top_merchant else None,
+            "merchant_visit_count": top_merchant["visit_count"] if top_merchant else None,
+            "suggestion": text,
+        })
     return suggestions
+
+
+def generate_savings_suggestions(transactions, budgets=SAMPLE_BUDGETS):
+    """Generates a specific, actionable savings suggestion for each category that is
+    over budget - naming the merchant driving the overspend and recommending either
+    cutting back on visit frequency or switching to a cheaper alternative, rather than
+    a generic 'spend less' message."""
+    return [s["suggestion"] for s in generate_savings_suggestions_detailed(transactions, budgets)]
 
 
 def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS):
@@ -175,7 +192,7 @@ def call_llm(prompt):
     client = openai.OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model="gpt-5",
-        max_tokens=300,
+        max_completion_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
     return response.choices[0].message.content
