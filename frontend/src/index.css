@@ -138,3 +138,148 @@ body {
   font-size: 0.85rem;
   margin: 0;
 }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+.btn {
+  background: #3b5bfd;
+  color: #fff;
+  border: none;
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #1a1a1a;
+  border: 1px solid #d3d6de;
+}
+
+.filters-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  background: #fff;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.25rem;
+}
+
+.filters-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: #4a4f5c;
+}
+
+.filters-bar select,
+.filters-bar input {
+  padding: 0.45rem 0.5rem;
+  border: 1px solid #d3d6de;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.status-banner {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.status-success {
+  background: #e6f4ea;
+  color: #1e7e34;
+}
+
+.status-error {
+  background: #fdecea;
+  color: #b3261e;
+}
+
+.empty-state {
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.65rem 0.9rem;
+  border-bottom: 1px solid #eef0f4;
+  white-space: nowrap;
+}
+
+.table th {
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.amount-col {
+  text-align: right;
+}
+
+.amount-negative {
+  color: #b3261e;
+}
+
+.amount-positive {
+  color: #1e7e34;
+}
+
+.upload-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 480px;
+}
+
+.upload-card h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+}
+
+.upload-card p {
+  margin: 0 0 0.9rem;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.upload-card form {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}

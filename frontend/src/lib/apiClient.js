@@ -26,8 +26,9 @@ class ApiError extends Error {
   }
 }
 
-async function request(path, { method = "GET", body, auth = false } = {}) {
-  const headers = { "Content-Type": "application/json" };
+async function request(path, { method = "GET", body, auth = false, isFormData = false } = {}) {
+  const headers = {};
+  if (!isFormData) headers["Content-Type"] = "application/json";
   if (auth) {
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -36,7 +37,10 @@ async function request(path, { method = "GET", body, auth = false } = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    // FormData sets its own multipart Content-Type (with boundary) - the
+    // browser only does that when we don't set Content-Type ourselves,
+    // which is why isFormData skips the JSON header above.
+    body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
 
   const isJson = response.headers.get("content-type")?.includes("application/json");
@@ -53,6 +57,8 @@ async function request(path, { method = "GET", body, auth = false } = {}) {
 export const apiClient = {
   get: (path, opts) => request(path, { ...opts, method: "GET" }),
   post: (path, body, opts) => request(path, { ...opts, method: "POST", body }),
+  postForm: (path, formData, opts) =>
+    request(path, { ...opts, method: "POST", body: formData, isFormData: true }),
   put: (path, body, opts) => request(path, { ...opts, method: "PUT", body }),
   delete: (path, opts) => request(path, { ...opts, method: "DELETE" }),
 };
