@@ -46,7 +46,7 @@ def sync_transactions(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
     try:
-        records = mock_transactions()
+        records = mock_transactions(seed=account.account_id, anchor_date=account.linked_at.date())
     except Exception:
         logger.exception(
             "Bank sandbox call failed during /bank/sync for account_id=%s", account.account_id
