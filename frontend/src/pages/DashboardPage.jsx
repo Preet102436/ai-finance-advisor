@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { fetchTransactions } from "../lib/transactions";
 import { recommendBudgets, generateForecast, detectAnomalies } from "../lib/dashboard";
+import SavingsSuggestionsPanel from "../components/SavingsSuggestionsPanel";
 
 // From the dataviz skill's reference palette (references/palette.md) -
 // sequential blue for magnitude, status colors reserved for severity only.
@@ -161,6 +162,10 @@ export default function DashboardPage() {
             </div>
           )
         )}
+      </section>
+
+      <section className="dashboard-section">
+        <SavingsSuggestionsPanel />
       </section>
 
       <section className="dashboard-section">
