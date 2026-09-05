@@ -1,11 +1,13 @@
 # Budgeting & Forecasting Subsystem — Design Notes
 
 **Owner:** Parth Patel (Budgeting & Forecasting)
-**Status:** Data inputs/outputs and model approach defined; prototype forecasting script
-implemented against sample transaction data (see `backend/budgeting-forecasting/`).
-Real `/budgets/recommend`, `/forecasts`, and `/anomalies` endpoints now read live
-transactions and write to the database (see `backend/api/routers/budgets.py`,
-`forecasts.py`, and `anomalies.py`).
+**Status:** Complete. Data inputs/outputs and model approach defined; prototype
+forecasting script implemented against sample transaction data (see
+`backend/budgeting-forecasting/`). Real `/budgets/recommend`, `/forecasts`, and
+`/anomalies` endpoints read live transactions and write to the database (see
+`backend/api/routers/budgets.py`, `forecasts.py`, and `anomalies.py`), fail
+cleanly instead of crashing, and were timed against a realistic sample size (see
+NFR Check below).
 
 ## Purpose
 Generate a personalised monthly budget per category and forecast a user's near-term
@@ -55,6 +57,27 @@ account balance, flagging when a predicted balance is likely to go low.
   `backend/api/test_anomalies.py` (10 normal transactions + 1 outlier, same shape
   as `test_forecast_prototype.py`'s own outlier test, since a lone outlier needs
   enough peers in its category before it reliably clears `z_threshold=3.0`)
+- [x] `/budgets/recommend`, `/forecasts`, and `/anomalies` wrapped in try/except
+  around their computation and DB-write steps: a forecasting failure (e.g.
+  insufficient/irregular data reaching `forecast_balance()`, or `detect_anomalies()`
+  choking on sparse history) now logs the full traceback server-side
+  (`logging.exception`) and returns a clean 422/500 JSON error instead of an
+  unhandled crash, with any partial writes rolled back. Covered by
+  `backend/api/test_error_handling.py`, which forces each computation to raise
+  (via real accounts/transactions, not mocked DB state) and asserts the clean
+  error response - `/forecasts` and `/anomalies` return 422 (bad/insufficient
+  input data), `/budgets/recommend`'s save step returns 500 with nothing
+  half-committed
+- [x] NFR check: timed all three endpoints against a realistic sample (1,048 real
+  transactions over 2 years, 8 categories, for one linked account) via the live
+  server. All three responded far within the ~3s target across 3 runs each:
+  `/budgets/recommend` ~9-26ms, `/forecasts` (30-day, moving-average) ~7-12ms,
+  `/anomalies` (730-day lookback) ~180-250ms. `/anomalies` is the slowest of the
+  three because `detect_anomalies()` recomputes each category's mean/stdev from
+  scratch per transaction (O(n) per category instead of O(1) after one pass) -
+  worth revisiting if a single user's transaction volume grows an order of
+  magnitude, but at today's realistic scale it's ~12x within budget, so no
+  caching or restructuring was needed
 - [ ] Tuning of the anomaly threshold using a larger sample dataset
 - [ ] Prophet not yet installed in `backend/api/requirements.txt` (moving-average
   fallback is exercised by default; add it once we want real confidence intervals)
@@ -65,3 +88,6 @@ account balance, flagging when a predicted balance is likely to go low.
   stored results.
 - `/anomalies` is user-triggered, not yet run automatically as new transactions
   arrive (e.g. right after `/bank/sync`).
+- If per-user transaction volume grows much larger, revisit `detect_anomalies()`'s
+  per-transaction mean/stdev recomputation (see NFR check above) - compute each
+  category's stats once per request instead of once per transaction in it.
