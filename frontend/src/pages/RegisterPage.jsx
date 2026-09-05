@@ -38,6 +38,7 @@ export default function RegisterPage() {
             type="text"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
+            disabled={submitting}
             required
           />
         </label>
@@ -47,6 +48,7 @@ export default function RegisterPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            disabled={submitting}
             required
           />
         </label>
@@ -56,9 +58,14 @@ export default function RegisterPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            disabled={submitting}
             minLength={8}
             required
+            aria-describedby="password-hint"
           />
+          <span id="password-hint" className="field-hint">
+            At least 8 characters.
+          </span>
         </label>
         <button type="submit" disabled={submitting}>
           {submitting ? "Creating account..." : "Register"}

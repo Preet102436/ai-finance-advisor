@@ -1,12 +1,14 @@
 # Chatbot & Savings Recommendation Subsystem — Design Notes
 
 **Owner:** Thiwanka Kaushalya Nagasanga (Conversational Chatbot / Savings Recommendation)
-**Status:** RAG architecture defined; prototype retrieval + prompt flow implemented
-(see `backend/chatbot-savings/`). Real `POST /chat/messages` now retrieves the
-current user's actual transactions/budgets, builds the grounded prompt, and logs
-the exchange to `chat_messages` (see `backend/api/routers/chat.py`). Real
-`GET /savings/suggestions` now exposes the savings-suggestion logic over real data
-(see `backend/api/routers/savings.py`).
+**Status:** Complete. RAG architecture defined; prototype retrieval + prompt flow
+implemented (see `backend/chatbot-savings/`). Real `POST /chat/messages` retrieves
+the current user's actual transactions/budgets, builds the grounded prompt, and
+logs the exchange to `chat_messages` (see `backend/api/routers/chat.py`). Real
+`GET /savings/suggestions` exposes the savings-suggestion logic over real data
+(see `backend/api/routers/savings.py`). Both are wired into a real Chat page and
+a savings-suggestions panel on the frontend, and have had a usability/
+accessibility pass (see Current Progress).
 
 ## Purpose
 Provide a conversational assistant that answers questions about the user's own finances,
@@ -65,17 +67,50 @@ generate practical savings suggestions.
       per over-budget category naming the category and the merchant/visit-count
       driving it. Covered by `backend/api/test_savings.py` (names the right
       merchant/visit count; categories under budget are correctly not suggested)
+- [x] Chat page built on the frontend (`frontend/src/pages/ChatPage.jsx`): a
+      scrollable message list and input calling `POST /chat/messages`
+      (conversation is client-side state only, since there's no chat-history GET
+      yet). A reusable `SavingsSuggestionsPanel` (`frontend/src/components/`)
+      calls `GET /savings/suggestions` and is shown both in the Chat page's
+      sidebar and on the Dashboard
+- [x] Usability/accessibility pass on the Chat, Login, and Register pages (this
+      subsystem's own UI), checked and fixed against three criteria:
+      - **Plain-language copy:** `/chat/messages`' no-real-answer fallback used to
+        show the raw LLM prompt verbatim, plus jargon like "API key"/"LLM
+        response"/"model returned an empty reply" - a real problem, since a real
+        `OPENAI_API_KEY` is set locally and the model reliably returns empty
+        content here (see below), so every user was seeing this. Rewritten to a
+        plain sentence built from the already-human-readable `retrieved_context`
+        (or a plain "no transaction history yet, try syncing" message when even
+        that's empty) - never the raw prompt. Login/Register/suggestion copy was
+        already jargon-free.
+      - **Loading and error states:** confirmed present on every async action
+        (submitting/sending/loading flags with matching button-text and disabled
+        states); added `disabled={submitting}` to the Login/Register input
+        fields to match the Chat page's existing pattern; removed a redundant
+        second error banner on the Chat page in favour of one clear message
+        surfaced where the user is looking (the reply bubble); fixed
+        `apiClient.js` to format FastAPI's list-of-objects validation-error
+        shape into readable text instead of risking an unreadable
+        "[object Object]" message.
+      - **Accessibility:** computed contrast on the chat bubbles' role labels
+        ("YOU"/"ASSISTANT") - both failed WCAG AA for text this size (~3.15:1 and
+        ~3.58:1 against a 4.5:1 requirement) and were fixed to clear it (~7:1 and
+        ~5.1:1). Added a screen-reader-only `<label>` (new `.sr-only` utility) for
+        the chat input, which previously relied on a placeholder alone. Added
+        `role="log"`/`aria-live="polite"` to the message list so new replies are
+        announced. Confirmed keyboard-only operation end-to-end (Tab to a field,
+        type, Enter submits) on Register, Login, and the chat input - Login/
+        Register's form fields were already correctly labelled via the
+        wrapping-`<label>` pattern.
 - [ ] Replace simple filtering retrieval with vector-similarity retrieval over a larger
       transaction history
-- [ ] A real `OPENAI_API_KEY` is now set locally, which surfaced two real bugs:
-      `call_llm()` passed `max_tokens` (fixed here - the API now requires
-      `max_completion_tokens` for this model), and the model still returns an
-      *empty* response for our prompt even after that fix (root cause unknown -
-      needs a maintainer who can spend real API credits investigating it).
-      `/chat/messages` degrades gracefully either way - it now falls back to
-      previewing the prompt whenever `call_llm()` returns `None` OR `""`
-      (previously only checked for `None`, so an empty-but-"successful" call
-      would have silently stored a blank assistant message)
+- [ ] The real `OPENAI_API_KEY` set locally surfaced two real bugs: `call_llm()`
+      passed `max_tokens` (fixed - the API now requires `max_completion_tokens`
+      for this model), and the model still returns an *empty* response for our
+      prompt even after that fix (root cause unknown - needs a maintainer who can
+      spend real API credits investigating it). `/chat/messages` degrades
+      gracefully either way via the plain-language fallback above
 - [ ] `GET /chat/messages` (chat history) still TODO
 - [ ] `/savings/suggestions` is read-only (no `savings_goals` table exists yet);
       goal-setting (`GET`/`POST /savings/goals`) still TODO

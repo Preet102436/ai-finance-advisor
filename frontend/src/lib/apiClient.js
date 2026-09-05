@@ -26,6 +26,21 @@ class ApiError extends Error {
   }
 }
 
+// FastAPI sends a plain string for most errors ("Incorrect email or
+// password"), but validation errors (422) come back as a list of
+// {msg, loc, ...} objects instead - without this, that list would get
+// silently stringified into an unreadable "[object Object]" error message.
+function formatErrorDetail(detail) {
+  if (!detail) return null;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (item && typeof item === "object" && item.msg ? item.msg : String(item)))
+      .join(" ");
+  }
+  return null;
+}
+
 async function request(path, { method = "GET", body, auth = false, isFormData = false } = {}) {
   const headers = {};
   if (!isFormData) headers["Content-Type"] = "application/json";
@@ -50,7 +65,7 @@ async function request(path, { method = "GET", body, auth = false, isFormData = 
   const data = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    const message = data?.detail || `Request failed with status ${response.status}`;
+    const message = formatErrorDetail(data?.detail) || `Request failed with status ${response.status}`;
     throw new ApiError(message, response.status, data);
   }
 
