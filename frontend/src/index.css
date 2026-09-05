@@ -477,3 +477,67 @@ body {
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
 }
+
+/* Settings */
+
+.settings-card {
+  background: #fcfcfb;
+  border-radius: 8px;
+  padding: 1.25rem;
+  max-width: 560px;
+}
+
+.settings-card p {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  color: #52514e;
+  line-height: 1.5;
+}
+
+.settings-card-danger {
+  border: 1px solid rgba(208, 59, 59, 0.25);
+}
+
+.consent-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.consent-toggle input {
+  margin-top: 0.2rem;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.btn-danger {
+  background: #d03b3b;
+  color: #fff;
+  border: none;
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.confirm-delete {
+  background: rgba(208, 59, 59, 0.06);
+  border-radius: 6px;
+  padding: 0.9rem;
+}
+
+.confirm-delete-text {
+  font-weight: 600;
+  color: #b3261e;
+  margin: 0 0 0.75rem !important;
+}
+
+.confirm-delete-actions {
+  display: flex;
+  gap: 0.6rem;
+}

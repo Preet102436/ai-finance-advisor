@@ -80,6 +80,14 @@ class SavingsSuggestionOut(BaseModel):
     suggestion: str
 
 
+class ConsentOut(BaseModel):
+    data_processing_consent: bool
+
+
+class ConsentUpdate(BaseModel):
+    data_processing_consent: bool
+
+
 class AnomalyOut(BaseModel):
     anomaly_id: int
     transaction_id: int

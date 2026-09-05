@@ -8,6 +8,7 @@ backend/api/README.md), not by SQLAlchemy migrations.
 
 from sqlalchemy import (
     TIMESTAMP,
+    Boolean,
     Column,
     Date,
     ForeignKey,
@@ -28,6 +29,7 @@ class User(Base):
     full_name = Column(String(150), nullable=False)
     email = Column(String(150), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    data_processing_consent = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
 
