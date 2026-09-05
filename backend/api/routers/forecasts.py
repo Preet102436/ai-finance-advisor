@@ -4,6 +4,8 @@ TODO (not implemented yet):
 - GET /forecasts    list current user's stored balance forecasts
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -13,6 +15,8 @@ from deps import get_current_user
 from forecast_prototype import forecast_balance
 from models import BankAccount, Forecast, Transaction, User
 from schemas import ForecastPoint, ForecastResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
@@ -65,29 +69,50 @@ def generate_forecast(
 
     daily_totals = {txn_date: float(total) for txn_date, total in rows}
 
-    forecast, method = forecast_balance(daily_totals, days_ahead, use_prophet=use_prophet)
-
-    points = []
-    for point in forecast:
-        record = Forecast(
-            user_id=current_user.user_id,
-            forecast_date=point["date"],
-            predicted_balance=point["predicted_balance"],
-            lower_bound=point.get("lower_bound"),
-            upper_bound=point.get("upper_bound"),
-            model_version=method,
+    try:
+        forecast, method = forecast_balance(daily_totals, days_ahead, use_prophet=use_prophet)
+    except Exception:
+        logger.exception(
+            "Forecast computation failed for account_id=%s (days_of_history=%d, days_ahead=%d)",
+            account.account_id, len(daily_totals), days_ahead,
         )
-        db.add(record)
-        points.append(
-            ForecastPoint(
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Could not generate a forecast from the available transaction history "
+                "(it may be too sparse or irregular). Try syncing more transactions first."
+            ),
+        )
+
+    try:
+        points = []
+        for point in forecast:
+            record = Forecast(
+                user_id=current_user.user_id,
                 forecast_date=point["date"],
                 predicted_balance=point["predicted_balance"],
                 lower_bound=point.get("lower_bound"),
                 upper_bound=point.get("upper_bound"),
+                model_version=method,
             )
-        )
+            db.add(record)
+            points.append(
+                ForecastPoint(
+                    forecast_date=point["date"],
+                    predicted_balance=point["predicted_balance"],
+                    lower_bound=point.get("lower_bound"),
+                    upper_bound=point.get("upper_bound"),
+                )
+            )
 
-    db.commit()
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to save forecast for account_id=%s", account.account_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The forecast was computed but saving it failed. Please try again.",
+        )
 
     return ForecastResponse(
         account_id=account.account_id,
