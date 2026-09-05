@@ -16,6 +16,17 @@ createdb -U postgres finance_advisor
 psql -U postgres -d finance_advisor -f ../../db/schema.sql
 ```
 
+If you already have a local database from before the consent/anomalies-cascade schema
+update, `db/schema.sql` won't retroactively alter existing tables (`CREATE TABLE` fails
+if the table exists) - apply these two statements once instead of recreating the DB:
+
+```sql
+ALTER TABLE users ADD COLUMN data_processing_consent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE anomalies DROP CONSTRAINT anomalies_transaction_id_fkey;
+ALTER TABLE anomalies ADD CONSTRAINT anomalies_transaction_id_fkey
+  FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id) ON DELETE CASCADE;
+```
+
 ## 2. Configure environment
 
 ```bash

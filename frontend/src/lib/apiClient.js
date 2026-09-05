@@ -43,7 +43,10 @@ async function request(path, { method = "GET", body, auth = false, isFormData = 
     body: isFormData ? body : body ? JSON.stringify(body) : undefined,
   });
 
-  const isJson = response.headers.get("content-type")?.includes("application/json");
+  // 204 No Content (e.g. DELETE /users/me) has no body to parse, even if
+  // the content-type header still says application/json.
+  const isJson =
+    response.status !== 204 && response.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await response.json() : null;
 
   if (!response.ok) {

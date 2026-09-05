@@ -7,6 +7,7 @@ CREATE TABLE users (
     full_name       VARCHAR(150) NOT NULL,
     email           VARCHAR(150) UNIQUE NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
+    data_processing_consent BOOLEAN NOT NULL DEFAULT FALSE,  -- GDPR/Privacy Act consent flag
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -70,7 +71,7 @@ CREATE TABLE forecasts (
 
 CREATE TABLE anomalies (
     anomaly_id      SERIAL PRIMARY KEY,
-    transaction_id  INTEGER NOT NULL REFERENCES transactions(transaction_id),
+    transaction_id  INTEGER NOT NULL REFERENCES transactions(transaction_id) ON DELETE CASCADE,
     anomaly_score   NUMERIC(6,4) NOT NULL,
     reason          VARCHAR(255),
     detected_at     TIMESTAMP NOT NULL DEFAULT NOW()

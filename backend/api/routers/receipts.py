@@ -7,6 +7,7 @@ TODO (not implemented yet):
 - GET  /receipts/{id}   fetch a receipt (incl. ocr_raw_text, linked transaction)
 """
 
+import logging
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from database import get_db
 from deps import get_current_user
 from models import BankAccount, Category, Receipt, Transaction, User
 from ocr_prototype import classify_category, extract_text, extract_total
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
@@ -75,33 +78,43 @@ def store_receipt_and_transaction(
 
     account = _resolve_account(db, current_user, account_id)
 
-    category = None
-    if predicted_category != "uncategorised":
-        category = _get_or_create_category(db, predicted_category)
+    try:
+        category = None
+        if predicted_category != "uncategorised":
+            category = _get_or_create_category(db, predicted_category)
 
-    # Receipts represent spend, so store as a negative amount - the same
-    # sign convention bank_sync and manual transactions use.
-    transaction = Transaction(
-        account_id=account.account_id,
-        category_id=category.category_id if category else None,
-        amount=-predicted_total,
-        description=f"Receipt upload ({predicted_category})",
-        txn_date=date.today(),
-        source="receipt_ocr",
-    )
-    db.add(transaction)
-    db.flush()
+        # Receipts represent spend, so store as a negative amount - the same
+        # sign convention bank_sync and manual transactions use.
+        transaction = Transaction(
+            account_id=account.account_id,
+            category_id=category.category_id if category else None,
+            amount=-predicted_total,
+            description=f"Receipt upload ({predicted_category})",
+            txn_date=date.today(),
+            source="receipt_ocr",
+        )
+        db.add(transaction)
+        db.flush()
 
-    receipt = Receipt(
-        user_id=current_user.user_id,
-        transaction_id=transaction.transaction_id,
-        image_path=image_path,
-        ocr_raw_text=raw_text,
-        processed_at=datetime.utcnow(),
-    )
-    db.add(receipt)
-    db.commit()
-    db.refresh(receipt)
+        receipt = Receipt(
+            user_id=current_user.user_id,
+            transaction_id=transaction.transaction_id,
+            image_path=image_path,
+            ocr_raw_text=raw_text,
+            processed_at=datetime.utcnow(),
+        )
+        db.add(receipt)
+        db.commit()
+        db.refresh(receipt)
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to save receipt/transaction for user_id=%s", current_user.user_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The receipt was read but saving it failed. Please try again.",
+        )
 
     return {
         "receipt_id": receipt.receipt_id,
@@ -120,14 +133,22 @@ def upload_receipt(
 ):
     suffix = Path(file.filename or "").suffix or ".jpg"
     stored_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
-    stored_path.write_bytes(file.file.read())
+    try:
+        stored_path.write_bytes(file.file.read())
+    except Exception:
+        logger.exception("Failed to save uploaded receipt file to %s", stored_path)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the uploaded file. Please try again.",
+        )
 
     try:
         raw_text = extract_text(str(stored_path))
-    except Exception as exc:
+    except Exception:
+        logger.exception("OCR engine call failed for %s", stored_path)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"OCR engine unavailable: {exc}",
+            detail="The OCR engine is unavailable right now. Please try again later.",
         )
 
     return store_receipt_and_transaction(db, current_user, raw_text, str(stored_path), account_id)
