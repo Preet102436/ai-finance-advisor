@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from deps import get_current_user
 from models import BankAccount, Category, Receipt, Transaction, User
-from ocr_prototype import classify_category, extract_text, extract_total
+from ocr_prototype import extract_receipt_fields, extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,9 @@ def store_receipt_and_transaction(
     transactions rows. Shared by the upload endpoint and tests, so the
     classification/persistence logic is exercisable with sample OCR text
     (see test_receipts_upload.py) without needing a real OCR engine."""
-    predicted_total = extract_total(raw_text)
-    predicted_category = classify_category(raw_text)
+    fields = extract_receipt_fields(raw_text)
+    predicted_total = fields["total"]
+    predicted_category = fields["category"]
 
     if predicted_total is None:
         raise HTTPException(
