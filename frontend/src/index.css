@@ -9,6 +9,21 @@ body {
   color: #1a1a1a;
 }
 
+/* Visually hides an element while keeping it in the accessibility tree -
+   for labels that are redundant on-screen (e.g. a placeholder already shows
+   the hint) but still needed so screen readers announce the field's name. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .app-shell {
   display: flex;
   min-height: 100vh;
@@ -122,6 +137,17 @@ body {
 .auth-form button:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.auth-form input:disabled {
+  background: #f5f6f8;
+  cursor: default;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-top: -0.15rem;
 }
 
 .auth-switch {
@@ -585,7 +611,10 @@ body {
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: #898781;
+  /* #52514e on the assistant bubble's #eef0f4 background clears WCAG AA
+     (~7:1) - the previous #898781 measured ~3.15:1, below the 4.5:1
+     required for text this small. */
+  color: #52514e;
   margin-bottom: 0.2rem;
 }
 
@@ -596,7 +625,9 @@ body {
 }
 
 .chat-bubble-user .chat-bubble-role {
-  color: rgba(255, 255, 255, 0.75);
+  /* Solid white on #3b5bfd clears WCAG AA (~5.1:1) - the previous 75%-opacity
+     white measured ~3.58:1, below the 4.5:1 required for text this small. */
+  color: #fff;
 }
 
 .chat-bubble-assistant {

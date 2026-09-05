@@ -51,13 +51,21 @@ def send_message(
     if not answer:
         # None: no OPENAI_API_KEY configured. Empty string: the model call
         # succeeded but returned no content (seen with real "gpt-5" calls) -
-        # either way there's no real answer to show, so fall back to a
-        # preview of what would have been sent.
-        answer = (
-            "(No usable LLM response - either no API key is configured on the server, "
-            "or the model returned an empty reply. Here's a preview of what would have "
-            "been sent.)\n\n" + prompt
-        )
+        # either way there's no real answer to show. Fall back to a plain-
+        # language message built from the already-human-readable
+        # retrieved_context, never the raw LLM prompt (which is full of
+        # instructions/formatting meant for a model, not a person).
+        if retrieved_context:
+            answer = (
+                "I can't put together a personalised answer right now, but here's what I "
+                "found in your recent transactions that relates to your question:\n\n"
+                + retrieved_context
+            )
+        else:
+            answer = (
+                "I don't have any transaction history to answer that yet. Try syncing your "
+                "bank account or uploading a receipt on the Transactions page first."
+            )
 
     db.add(ChatMessage(user_id=current_user.user_id, role="user", content=payload.question))
     assistant_message = ChatMessage(

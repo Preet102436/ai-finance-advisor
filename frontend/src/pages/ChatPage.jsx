@@ -6,7 +6,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -21,17 +20,13 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
     setQuestion("");
     setSending(true);
-    setError("");
 
     try {
       const result = await sendChatMessage(trimmed);
       setMessages((prev) => [...prev, { role: "assistant", content: result.answer }]);
     } catch (err) {
-      setError(err.message || "Failed to get a response");
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Sorry, something went wrong answering that.", isError: true },
-      ]);
+      const message = err.message || "Something went wrong. Please try asking again.";
+      setMessages((prev) => [...prev, { role: "assistant", content: message, isError: true }]);
     } finally {
       setSending(false);
     }
@@ -45,11 +40,11 @@ export default function ChatPage() {
 
       <div className="chat-layout">
         <div className="chat-panel">
-          <div className="chat-messages">
+          <div className="chat-messages" role="log" aria-live="polite" aria-label="Conversation">
             {messages.length === 0 && (
               <p className="empty-state">
-                Ask about your spending - e.g. "Am I over budget on dining?" or "How much did I
-                spend on groceries this month?"
+                Ask about your spending - for example, "Am I over budget on dining?" or "How much
+                did I spend on groceries this month?"
               </p>
             )}
             {messages.map((m, i) => (
@@ -72,10 +67,12 @@ export default function ChatPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {error && <p className="status-banner status-error">{error}</p>}
-
           <form className="chat-input-form" onSubmit={handleSubmit}>
+            <label htmlFor="chat-question" className="sr-only">
+              Type a question about your spending
+            </label>
             <input
+              id="chat-question"
               type="text"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
