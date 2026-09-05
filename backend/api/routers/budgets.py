@@ -5,9 +5,10 @@ TODO (not implemented yet):
 - POST /budgets     create/override a budget for a category+month
 """
 
+import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import Date, func
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,8 @@ from database import get_db
 from deps import get_current_user
 from models import BankAccount, Budget, Category, Transaction, User
 from schemas import BudgetOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
@@ -70,53 +73,64 @@ def recommend_budgets(
     if not by_category:
         return []
 
-    category_names = {
-        c.category_id: c.name
-        for c in db.query(Category).filter(Category.category_id.in_(by_category.keys())).all()
-    }
+    try:
+        category_names = {
+            c.category_id: c.name
+            for c in db.query(Category).filter(Category.category_id.in_(by_category.keys())).all()
+        }
 
-    results = []
-    for category_id, monthly in by_category.items():
-        monthly.sort(key=lambda pair: pair[0])
-        weights = range(1, len(monthly) + 1)
-        weighted_sum = sum(abs(total) * w for (_, total), w in zip(monthly, weights))
-        weighted_avg = weighted_sum / sum(weights)
-        recommended_amount = round(weighted_avg * (1 - savings_target), 2)
+        results = []
+        for category_id, monthly in by_category.items():
+            monthly.sort(key=lambda pair: pair[0])
+            weights = range(1, len(monthly) + 1)
+            weighted_sum = sum(abs(total) * w for (_, total), w in zip(monthly, weights))
+            weighted_avg = weighted_sum / sum(weights)
+            recommended_amount = round(weighted_avg * (1 - savings_target), 2)
 
-        budget = (
-            db.query(Budget)
-            .filter(
-                Budget.user_id == current_user.user_id,
-                Budget.category_id == category_id,
-                Budget.period_month == period_month,
-                Budget.generated_by == "ai_engine",
+            budget = (
+                db.query(Budget)
+                .filter(
+                    Budget.user_id == current_user.user_id,
+                    Budget.category_id == category_id,
+                    Budget.period_month == period_month,
+                    Budget.generated_by == "ai_engine",
+                )
+                .first()
             )
-            .first()
+            if budget:
+                budget.recommended_amount = recommended_amount
+            else:
+                budget = Budget(
+                    user_id=current_user.user_id,
+                    category_id=category_id,
+                    period_month=period_month,
+                    recommended_amount=recommended_amount,
+                    generated_by="ai_engine",
+                )
+                db.add(budget)
+            db.flush()
+
+            results.append(
+                BudgetOut(
+                    budget_id=budget.budget_id,
+                    category_id=category_id,
+                    category_name=category_names.get(category_id, "unknown"),
+                    period_month=period_month,
+                    recommended_amount=recommended_amount,
+                    months_considered=len(monthly),
+                    generated_by="ai_engine",
+                )
+            )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Budget recommendation failed for user_id=%s", current_user.user_id
         )
-        if budget:
-            budget.recommended_amount = recommended_amount
-        else:
-            budget = Budget(
-                user_id=current_user.user_id,
-                category_id=category_id,
-                period_month=period_month,
-                recommended_amount=recommended_amount,
-                generated_by="ai_engine",
-            )
-            db.add(budget)
-        db.flush()
-
-        results.append(
-            BudgetOut(
-                budget_id=budget.budget_id,
-                category_id=category_id,
-                category_name=category_names.get(category_id, "unknown"),
-                period_month=period_month,
-                recommended_amount=recommended_amount,
-                months_considered=len(monthly),
-                generated_by="ai_engine",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not compute budget recommendations right now. Please try again.",
         )
 
-    db.commit()
     return results
