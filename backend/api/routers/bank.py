@@ -5,6 +5,8 @@ The /bank/link-account and /bank/link-account/callback routes for this
 prefix are mounted separately in main.py, from link_account_api.py's router.
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,8 @@ from database import get_db
 from deps import get_current_user
 from models import BankAccount, Category, Transaction, User
 from sandbox_auth_test import mock_transactions
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bank", tags=["bank"])
 
@@ -41,44 +45,65 @@ def sync_transactions(
         if account is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    inserted_ids = []
-    for record in mock_transactions():
-        already_synced = (
-            db.query(Transaction)
-            .filter(
-                Transaction.account_id == account.account_id,
-                Transaction.txn_date == record["date"],
-                Transaction.amount == record["amount"],
-                Transaction.merchant == record["merchant"],
+    try:
+        records = mock_transactions()
+    except Exception:
+        logger.exception(
+            "Bank sandbox call failed during /bank/sync for account_id=%s", account.account_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not reach the bank sandbox to sync transactions. Please try again later.",
+        )
+
+    try:
+        inserted_ids = []
+        for record in records:
+            already_synced = (
+                db.query(Transaction)
+                .filter(
+                    Transaction.account_id == account.account_id,
+                    Transaction.txn_date == record["date"],
+                    Transaction.amount == record["amount"],
+                    Transaction.merchant == record["merchant"],
+                )
+                .first()
             )
-            .first()
+            if already_synced:
+                continue
+
+            category = None
+            category_name = record.get("category")
+            if category_name:
+                category = db.query(Category).filter(Category.name == category_name).first()
+                if category is None:
+                    category = Category(name=category_name)
+                    db.add(category)
+                    db.flush()
+
+            txn = Transaction(
+                account_id=account.account_id,
+                category_id=category.category_id if category else None,
+                amount=record["amount"],
+                description=record.get("description"),
+                merchant=record.get("merchant"),
+                txn_date=record["date"],
+                source="bank_sync",
+            )
+            db.add(txn)
+            db.flush()
+            inserted_ids.append(txn.transaction_id)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "Failed to save synced transactions for account_id=%s", account.account_id
         )
-        if already_synced:
-            continue
-
-        category = None
-        category_name = record.get("category")
-        if category_name:
-            category = db.query(Category).filter(Category.name == category_name).first()
-            if category is None:
-                category = Category(name=category_name)
-                db.add(category)
-                db.flush()
-
-        txn = Transaction(
-            account_id=account.account_id,
-            category_id=category.category_id if category else None,
-            amount=record["amount"],
-            description=record.get("description"),
-            merchant=record.get("merchant"),
-            txn_date=record["date"],
-            source="bank_sync",
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Sync retrieved data from the bank sandbox but saving it failed. Please try again.",
         )
-        db.add(txn)
-        db.flush()
-        inserted_ids.append(txn.transaction_id)
-
-    db.commit()
 
     return {
         "account_id": account.account_id,
