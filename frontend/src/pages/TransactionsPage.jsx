@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   fetchTransactionCategories,
   fetchTransactions,
+  linkBankAccount,
   syncBankAccount,
   uploadReceipt,
 } from "../lib/transactions";
@@ -15,6 +16,10 @@ export default function TransactionsPage() {
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+
+  const [linking, setLinking] = useState(false);
+  const [linkMessage, setLinkMessage] = useState(null);
+  const [bankLinked, setBankLinked] = useState(false);
 
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState(null);
@@ -60,6 +65,20 @@ export default function TransactionsPage() {
     setAppliedFilters((prev) => ({ ...prev }));
   }
 
+  async function handleLinkBank() {
+    setLinking(true);
+    setLinkMessage(null);
+    try {
+      await linkBankAccount();
+      setBankLinked(true);
+      setLinkMessage({ type: "success", text: "Bank account linked. You can now sync transactions." });
+    } catch (err) {
+      setLinkMessage({ type: "error", text: err.message || "Failed to link bank account" });
+    } finally {
+      setLinking(false);
+    }
+  }
+
   async function handleSync() {
     setSyncing(true);
     setSyncMessage(null);
@@ -97,10 +116,27 @@ export default function TransactionsPage() {
     <div>
       <div className="page-header">
         <h1>Transactions</h1>
-        <button className="btn" onClick={handleSync} disabled={syncing}>
-          {syncing ? "Syncing..." : "Sync bank account"}
-        </button>
+        <div className="page-header-actions">
+          <button className="btn btn-secondary" onClick={handleLinkBank} disabled={linking || bankLinked}>
+            {linking ? "Linking..." : bankLinked ? "Bank account linked" : "Link bank account"}
+          </button>
+          <button className="btn" onClick={handleSync} disabled={syncing}>
+            {syncing ? "Syncing..." : "Sync bank account"}
+          </button>
+        </div>
       </div>
+
+      <p className="empty-state">
+        New here? Click "Link bank account" once to connect the demo sandbox account, then
+        "Sync bank account" to pull in transactions. Already linked in an earlier session? Just
+        sync.
+      </p>
+
+      {linkMessage && (
+        <p className={linkMessage.type === "error" ? "status-banner status-error" : "status-banner status-success"}>
+          {linkMessage.text}
+        </p>
+      )}
 
       {syncMessage && (
         <p className={syncMessage.type === "error" ? "status-banner status-error" : "status-banner status-success"}>

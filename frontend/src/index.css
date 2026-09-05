@@ -176,6 +176,11 @@ body {
   margin: 0;
 }
 
+.page-header-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
 .btn {
   background: #3b5bfd;
   color: #fff;

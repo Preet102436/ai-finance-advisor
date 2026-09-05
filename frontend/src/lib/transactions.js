@@ -13,6 +13,18 @@ export async function fetchTransactionCategories() {
   return apiClient.get("/transactions/categories", { auth: true });
 }
 
+export async function linkBankAccount() {
+  // Two-step OAuth-style flow (see backend/expense-ocr/link_account_api.py):
+  // /bank/link-account issues an authorisation code, which /callback then
+  // exchanges for a token and persists as a bank_accounts row.
+  const { auth_code, state } = await apiClient.post("/bank/link-account", undefined, { auth: true });
+  return apiClient.post(
+    "/bank/link-account/callback",
+    { auth_code, state },
+    { auth: true }
+  );
+}
+
 export async function syncBankAccount() {
   return apiClient.post("/bank/sync", undefined, { auth: true });
 }
