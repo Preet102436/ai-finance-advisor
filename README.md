@@ -6,6 +6,9 @@ suggestions, and a financial chatbot, plus advanced features (predictive cash-fl
 forecasting & anomaly detection, receipt OCR + AI categorisation, and a
 Retrieval-Augmented Generation chatbot).
 
+## AI Chatbot and Savings Recommendations
+The finance chatbot lets users ask questions about their spending in plain language. It uses a retrieval-augmented generation (RAG) approach to draw on available financial information when preparing responses. The app also provides personalised savings suggestions to help users make informed decisions based on their finances.
+
 This is the COIT20273 capstone project (Term 2 2026).
 
 ## Team
