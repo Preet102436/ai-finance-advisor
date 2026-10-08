@@ -1,4 +1,6 @@
 """GET /users/me - protected route, returns the authenticated user.
+GET/PUT /users/me/profile - phone/address/monthly income, for the Settings
+page's Profile tab.
 DELETE /users/me - deletes the user and all their linked data, per the
 proposal's GDPR/Privacy Act commitment."""
 
@@ -8,13 +10,32 @@ from sqlalchemy.orm import Session
 from database import get_db
 from deps import get_current_user
 from models import User
-from schemas import UserOut
+from schemas import UserOut, UserProfileOut, UserProfileUpdate
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/me", response_model=UserOut)
 def read_current_user(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.get("/me/profile", response_model=UserProfileOut)
+def read_current_user_profile(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.put("/me/profile", response_model=UserProfileOut)
+def update_current_user_profile(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.phone = payload.phone
+    current_user.address = payload.address
+    current_user.monthly_income = payload.monthly_income
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

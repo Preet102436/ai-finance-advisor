@@ -56,16 +56,21 @@ def test_consent_flag_defaults_false_and_can_be_toggled():
     try:
         get_resp = client.get("/settings", headers=headers)
         assert get_resp.status_code == 200
-        assert get_resp.json() == {"data_processing_consent": False}
+        assert get_resp.json() == {"data_processing_consent": False, "ai_enabled": True}
 
         put_resp = client.put(
             "/settings", headers=headers, json={"data_processing_consent": True}
         )
         assert put_resp.status_code == 200
-        assert put_resp.json() == {"data_processing_consent": True}
+        assert put_resp.json() == {"data_processing_consent": True, "ai_enabled": True}
 
         get_again = client.get("/settings", headers=headers)
-        assert get_again.json() == {"data_processing_consent": True}
+        assert get_again.json() == {"data_processing_consent": True, "ai_enabled": True}
+
+        # ai_enabled can be toggled independently, without touching consent.
+        ai_off_resp = client.put("/settings", headers=headers, json={"ai_enabled": False})
+        assert ai_off_resp.status_code == 200
+        assert ai_off_resp.json() == {"data_processing_consent": True, "ai_enabled": False}
     finally:
         db = SessionLocal()
         try:

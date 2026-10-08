@@ -8,6 +8,10 @@ CREATE TABLE users (
     email           VARCHAR(150) UNIQUE NOT NULL,
     password_hash   VARCHAR(255) NOT NULL,
     data_processing_consent BOOLEAN NOT NULL DEFAULT FALSE,  -- GDPR/Privacy Act consent flag
+    ai_enabled      BOOLEAN NOT NULL DEFAULT TRUE,  -- opt out of LLM calls (chat, receipt extraction); heuristics-only fallback is always used instead
+    phone           VARCHAR(30),
+    address         VARCHAR(255),
+    monthly_income  NUMERIC(12, 2),
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -17,13 +21,14 @@ CREATE TABLE bank_accounts (
     provider_name   VARCHAR(100) NOT NULL,        -- e.g. sandbox bank name
     external_ref    VARCHAR(255) NOT NULL,        -- token/ID from Open Banking sandbox
     account_type    VARCHAR(50),
+    account_number_display VARCHAR(50),           -- masked sandbox account number shown in the UI
     currency        VARCHAR(10) DEFAULT 'AUD',
     linked_at       TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE categories (
     category_id     SERIAL PRIMARY KEY,
-    name            VARCHAR(100) NOT NULL,
+    name            VARCHAR(100) NOT NULL UNIQUE,
     parent_category INTEGER REFERENCES categories(category_id)
 );
 
@@ -42,7 +47,7 @@ CREATE TABLE transactions (
 CREATE TABLE receipts (
     receipt_id      SERIAL PRIMARY KEY,
     user_id         INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    transaction_id  INTEGER REFERENCES transactions(transaction_id),
+    transaction_id  INTEGER REFERENCES transactions(transaction_id) ON DELETE CASCADE,
     image_path      VARCHAR(255) NOT NULL,
     ocr_raw_text    TEXT,
     processed_at    TIMESTAMP
@@ -55,7 +60,8 @@ CREATE TABLE budgets (
     period_month    DATE NOT NULL,           -- first day of the budget month
     recommended_amount NUMERIC(12,2) NOT NULL,
     generated_by    VARCHAR(20) NOT NULL DEFAULT 'ai_engine',
-    created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (user_id, category_id, period_month)
 );
 
 CREATE TABLE forecasts (
@@ -83,5 +89,6 @@ CREATE TABLE chat_messages (
     role            VARCHAR(20) NOT NULL,   -- user | assistant
     content         TEXT NOT NULL,
     retrieved_context TEXT,                 -- RAG context used for this reply, if any
+    rating          VARCHAR(10),            -- up | down | null (assistant messages only)
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
