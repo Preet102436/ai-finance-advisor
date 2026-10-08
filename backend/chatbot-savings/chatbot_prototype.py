@@ -17,9 +17,12 @@ POST /chat/messages endpoint, swapping SAMPLE_TRANSACTIONS/SAMPLE_BUDGETS for
 the current user's real transactions/budgets from the database.
 """
 
+import logging
 import os
 import re
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 SAMPLE_TRANSACTIONS = [
     {"date": "2026-07-14", "category": "dining", "amount": -125.00, "merchant": "Rustic Kitchen"},
@@ -111,25 +114,31 @@ def generate_savings_suggestions_detailed(transactions, budgets=SAMPLE_BUDGETS):
     suggestions = []
     for cat, overspend in over_budget.items():
         top_merchant = top_merchant_in_category(transactions, cat)
+        annual_savings = round(overspend * 12, 2)
+        # Quantified call-to-action, e.g. "Reduce dining by $40/month -> save
+        # $480/year." - makes the suggestion actionable (a concrete number to
+        # aim for) instead of just a diagnosis of what went over and why.
+        action = f" Reduce {cat} by ${overspend:.2f}/month -> save ${annual_savings:.2f}/year."
         if top_merchant is None:
-            text = f"You're ${overspend:.2f} over your {cat} budget this month."
+            text = f"You're ${overspend:.2f} over your {cat} budget this month.{action}"
         elif top_merchant["visit_count"] > 1:
             text = (
                 f"You're ${overspend:.2f} over your {cat} budget this month, largely driven by "
                 f"{top_merchant['visit_count']} visits to {top_merchant['merchant']} "
                 f"(${top_merchant['total_spent']:.2f} total). Consider cutting back to fewer "
-                f"visits a week, or switching to a cheaper alternative nearby."
+                f"visits a week, or switching to a cheaper alternative nearby.{action}"
             )
         else:
             text = (
                 f"You're ${overspend:.2f} over your {cat} budget this month, largely driven by "
                 f"a single ${top_merchant['total_spent']:.2f} transaction at "
                 f"{top_merchant['merchant']}. Worth checking whether that was a one-off or a "
-                f"pattern to budget for going forward."
+                f"pattern to budget for going forward.{action}"
             )
         suggestions.append({
             "category": cat,
             "overspend": overspend,
+            "annual_savings": annual_savings,
             "top_merchant": top_merchant["merchant"] if top_merchant else None,
             "merchant_total_spent": top_merchant["total_spent"] if top_merchant else None,
             "merchant_visit_count": top_merchant["visit_count"] if top_merchant else None,
@@ -146,7 +155,7 @@ def generate_savings_suggestions(transactions, budgets=SAMPLE_BUDGETS):
     return [s["suggestion"] for s in generate_savings_suggestions_detailed(transactions, budgets)]
 
 
-def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS):
+def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS, forecast=None):
     context = build_context_block(retrieved)
     category_totals = category_totals_for(retrieved)
 
@@ -158,9 +167,18 @@ def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS):
 
     suggestion_lines = generate_savings_suggestions(retrieved, budgets)
 
+    if forecast:
+        forecast_block = (
+            f"Balance forecast ({forecast['method']}, next {forecast['days_ahead']} days): "
+            f"predicted ${forecast['end_balance']:.2f} by {forecast['end_date']} "
+            f"(starting from ${forecast['start_balance']:.2f} on {forecast['start_date']})."
+        )
+    else:
+        forecast_block = "No forecast generated yet - the user hasn't visited the Dashboard this session."
+
     prompt = f"""You are a helpful personal finance assistant. Answer the user's question
-using ONLY the transaction data provided below. Be specific and concise, and clearly
-frame any suggestion as a suggestion, not financial advice.
+using ONLY the data provided below (transactions, budgets, forecast). Be specific and
+concise, and clearly frame any suggestion as a suggestion, not financial advice.
 
 User's recent relevant transactions:
 {context}
@@ -171,12 +189,20 @@ Budget comparison:
 Savings suggestions:
 {chr(10).join(f"- {s}" for s in suggestion_lines) if suggestion_lines else "No categories currently over budget."}
 
+{forecast_block}
+
 User question: {question}
 """
     return prompt
 
 
 def call_llm(prompt):
+    """Returns the LLM's reply, or None if no API key is configured or the
+    call fails for ANY reason (bad/expired key, rate limit, network error,
+    model unavailable, empty response, ...). Callers (chat.py's
+    /chat/messages) always have a graceful plain-language fallback ready for
+    the None case - the API failing should degrade the chat experience, not
+    crash the whole endpoint with an unhandled 500."""
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         print("[No OPENAI_API_KEY set - printing the constructed prompt instead of "
@@ -187,15 +213,28 @@ def call_llm(prompt):
     try:
         import openai
     except ImportError:
-        raise RuntimeError("Run: pip install openai --break-system-packages")
+        logger.warning("openai package not installed; falling back to offline behaviour")
+        return None
 
-    client = openai.OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model="gpt-5",
-        max_completion_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.choices[0].message.content
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-5",
+            # Same reasoning-model token headroom as the receipt-extraction
+            # LLM call in ocr_prototype.py - too tight a budget has been seen
+            # to come back with no visible content at all.
+            max_completion_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError(
+                f"LLM returned no content (finish_reason={response.choices[0].finish_reason!r})"
+            )
+        return content
+    except Exception:
+        logger.exception("Chat LLM call failed; falling back to offline behaviour")
+        return None
 
 
 def ask(question):

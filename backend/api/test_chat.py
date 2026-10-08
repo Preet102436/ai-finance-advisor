@@ -126,6 +126,29 @@ def test_chat_answer_is_grounded_in_real_data_and_logged():
             assert user_message.retrieved_context is None
         finally:
             db.close()
+
+        rate_resp = client.put(
+            f"/chat/messages/{chat_data['message_id']}/rating",
+            headers=headers,
+            json={"rating": "up"},
+        )
+        assert rate_resp.status_code == 200
+        assert rate_resp.json()["rating"] == "up"
+
+        db = SessionLocal()
+        try:
+            rated = db.get(ChatMessage, chat_data["message_id"])
+            assert rated.rating == "up"
+        finally:
+            db.close()
+
+        # Can't rate the user's own message, or someone else's assistant message.
+        bad_rate_resp = client.put(
+            f"/chat/messages/{chat_data['message_id'] - 1}/rating",
+            headers=headers,
+            json={"rating": "down"},
+        )
+        assert bad_rate_resp.status_code == 404
     finally:
         db = SessionLocal()
         try:
