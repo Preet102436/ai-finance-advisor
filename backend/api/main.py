@@ -42,6 +42,7 @@ from routers import (  # noqa: E402
     budgets,
     chat,
     forecasts,
+    insights,
     receipts,
     savings,
     settings,
@@ -89,6 +90,7 @@ app.include_router(transactions.router)
 app.include_router(budgets.router)
 app.include_router(forecasts.router)
 app.include_router(anomalies.router)
+app.include_router(insights.router)
 app.include_router(receipts.router)
 app.include_router(chat.router)
 app.include_router(savings.router)
