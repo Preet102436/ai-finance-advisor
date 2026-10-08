@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 
@@ -30,6 +31,10 @@ class User(Base):
     email = Column(String(150), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     data_processing_consent = Column(Boolean, nullable=False, default=False, server_default="false")
+    ai_enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    phone = Column(String(30))
+    address = Column(String(255))
+    monthly_income = Column(Numeric(12, 2))
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
 
@@ -41,6 +46,7 @@ class BankAccount(Base):
     provider_name = Column(String(100), nullable=False)
     external_ref = Column(String(255), nullable=False)
     account_type = Column(String(50))
+    account_number_display = Column(String(50))
     currency = Column(String(10), default="AUD")
     linked_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
 
@@ -49,7 +55,7 @@ class Category(Base):
     __tablename__ = "categories"
 
     category_id = Column(Integer, primary_key=True)
-    name = Column(String(100), nullable=False)
+    name = Column(String(100), nullable=False, unique=True)
     parent_category = Column(Integer, ForeignKey("categories.category_id"))
 
 
@@ -72,7 +78,7 @@ class Receipt(Base):
 
     receipt_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
-    transaction_id = Column(Integer, ForeignKey("transactions.transaction_id"))
+    transaction_id = Column(Integer, ForeignKey("transactions.transaction_id", ondelete="CASCADE"))
     image_path = Column(String(255), nullable=False)
     ocr_raw_text = Column(Text)
     processed_at = Column(TIMESTAMP)
@@ -80,6 +86,7 @@ class Receipt(Base):
 
 class Budget(Base):
     __tablename__ = "budgets"
+    __table_args__ = (UniqueConstraint("user_id", "category_id", "period_month"),)
 
     budget_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -121,4 +128,5 @@ class ChatMessage(Base):
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     retrieved_context = Column(Text)
+    rating = Column(String(10))
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.now())
