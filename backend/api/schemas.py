@@ -152,6 +152,17 @@ class TransactionCategoryUpdate(BaseModel):
     category_name: str = Field(min_length=1, max_length=100)
 
 
+class CsvImportRowError(BaseModel):
+    row: int
+    reason: str
+
+
+class CsvImportResult(BaseModel):
+    total_rows: int
+    imported: int
+    skipped: list[CsvImportRowError]
+
+
 class ReceiptPreviewOut(BaseModel):
     receipt_id: int
     predicted_merchant: str | None = None

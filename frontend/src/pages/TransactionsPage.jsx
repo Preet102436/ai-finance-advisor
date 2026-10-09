@@ -5,6 +5,7 @@ import {
   syncBankAccount,
   updateTransactionCategory,
   fetchReceiptForTransaction,
+  importTransactionsCsv,
 } from "../lib/transactions";
 import { fetchBankAccounts } from "../lib/settings";
 import BankLinkModal from "../components/BankLinkModal";
@@ -17,6 +18,7 @@ const SOURCE_LABELS = {
   bank_sync: "Bank sync",
   receipt_ocr: "Receipt scan",
   manual: "Manual",
+  csv_import: "CSV import",
 };
 
 function TransactionDetailsModal({ txn, onClose }) {
@@ -100,6 +102,10 @@ export default function TransactionsPage() {
   const [receiptFile, setReceiptFile] = useState(null);
   const fileInputRef = useRef(null);
 
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null);
+  const csvInputRef = useRef(null);
+
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [detailsTxn, setDetailsTxn] = useState(null);
 
@@ -173,6 +179,24 @@ export default function TransactionsPage() {
     e.target.value = "";
   }
 
+  async function handleCsvPicked(e) {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setCsvImporting(true);
+    setCsvResult(null);
+    try {
+      const result = await importTransactionsCsv(file);
+      setCsvResult({ type: result.skipped.length > 0 ? "warning" : "success", data: result });
+      if (result.imported > 0) reloadTransactions();
+    } catch (err) {
+      setCsvResult({ type: "error", message: err.message || "Could not import this CSV file." });
+    } finally {
+      setCsvImporting(false);
+    }
+  }
+
   async function handleCategoryChange(transactionId, newCategory) {
     if (!newCategory.trim()) return;
     try {
@@ -209,6 +233,29 @@ export default function TransactionsPage() {
             onChange={handleFilePicked}
             style={{ display: "none" }}
           />
+          <a
+            className="btn btn-secondary"
+            href="/sample-transactions.csv"
+            download
+            title="Download a sample CSV to see the expected format"
+          >
+            Download sample CSV
+          </a>
+          <button
+            className="btn btn-secondary"
+            onClick={() => csvInputRef.current?.click()}
+            disabled={!accountsLoaded || !hasLinkedAccount || csvImporting}
+            title={!hasLinkedAccount ? "Link a bank account first" : undefined}
+          >
+            {csvImporting ? "Importing..." : "Import CSV"}
+          </button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleCsvPicked}
+            style={{ display: "none" }}
+          />
           <button className="btn" onClick={() => setShowExpenseModal(true)}>
             + Add transaction
           </button>
@@ -219,6 +266,32 @@ export default function TransactionsPage() {
         <p className={syncMessage.type === "error" ? "status-banner status-error" : "status-banner status-success"}>
           {syncMessage.text}
         </p>
+      )}
+
+      {csvResult && csvResult.type === "error" && (
+        <p className="status-banner status-error">{csvResult.message}</p>
+      )}
+
+      {csvResult && csvResult.data && (
+        <div
+          className={
+            "status-banner " + (csvResult.type === "warning" ? "status-warning" : "status-success")
+          }
+        >
+          <p>
+            Imported {csvResult.data.imported} of {csvResult.data.total_rows} row(s).
+            {csvResult.data.skipped.length > 0 && ` ${csvResult.data.skipped.length} row(s) skipped.`}
+          </p>
+          {csvResult.data.skipped.length > 0 && (
+            <ul className="csv-import-errors">
+              {csvResult.data.skipped.map((s) => (
+                <li key={s.row}>
+                  Row {s.row}: {s.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       <form className="filters-bar" onSubmit={applyFilters}>
@@ -255,6 +328,7 @@ export default function TransactionsPage() {
             <option value="bank_sync">Bank sync</option>
             <option value="receipt_ocr">Receipt scan</option>
             <option value="manual">Manual</option>
+            <option value="csv_import">CSV import</option>
           </select>
         </label>
         <label>

@@ -23,6 +23,12 @@ export async function createTransaction(payload) {
   return apiClient.post("/transactions", payload, { auth: true });
 }
 
+export async function importTransactionsCsv(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.postForm("/transactions/import-csv", formData, { auth: true });
+}
+
 export async function updateTransactionCategory(transactionId, categoryName) {
   return apiClient.put(
     `/transactions/${transactionId}/category`,
