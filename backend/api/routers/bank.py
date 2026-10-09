@@ -14,10 +14,45 @@ from database import get_db
 from deps import get_current_user
 from models import BankAccount, Category, Transaction, User
 from sandbox_auth_test import mock_transactions
+from schemas import BankAccountOut
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bank", tags=["bank"])
+
+
+@router.get("/accounts", response_model=list[BankAccountOut])
+def list_bank_accounts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Used by the Settings page's Connected Accounts tab."""
+    accounts = (
+        db.query(BankAccount)
+        .filter(BankAccount.user_id == current_user.user_id)
+        .order_by(BankAccount.linked_at.desc())
+        .all()
+    )
+    return accounts
+
+
+@router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+def disconnect_bank_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Disconnects (deletes) a linked account - cascades to its transactions/
+    receipts/anomalies via the existing ON DELETE CASCADE foreign keys."""
+    account = (
+        db.query(BankAccount)
+        .filter(BankAccount.account_id == account_id, BankAccount.user_id == current_user.user_id)
+        .first()
+    )
+    if account is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    db.delete(account)
+    db.commit()
 
 
 @router.post("/sync")
@@ -29,16 +64,21 @@ def sync_transactions(
     """Simulate a bank sync: fetch the sandbox's mocked transactions for the
     current user's linked account and insert any not already present as
     `transactions` rows with source='bank_sync'."""
-    accounts = db.query(BankAccount).filter(BankAccount.user_id == current_user.user_id).all()
+    accounts = (
+        db.query(BankAccount)
+        .filter(BankAccount.user_id == current_user.user_id)
+        .order_by(BankAccount.linked_at.desc())
+        .all()
+    )
     if not accounts:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No linked bank account found")
 
     if account_id is None:
-        if len(accounts) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Multiple accounts found; pass ?account_id= to choose one",
-            )
+        # Only one account per user is linkable from the UI (see
+        # _persist_linked_account in main.py), but a user may still have
+        # more than one from before that guard existed - default to the
+        # most recently linked one instead of making the caller disambiguate
+        # with a raw "pass ?account_id=" error.
         account = accounts[0]
     else:
         account = next((a for a in accounts if a.account_id == account_id), None)
