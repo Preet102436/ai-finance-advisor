@@ -99,6 +99,21 @@ def classify_category(raw_text):
     return "uncategorised"
 
 
+def guess_merchant(raw_text):
+    """Heuristic fallback: receipts conventionally print the merchant/store
+    name as the first line. Skips blank lines and lines that are mostly
+    digits (a receipt/order number sometimes printed above the name)."""
+    for line in raw_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        digit_count = sum(ch.isdigit() for ch in stripped)
+        if digit_count > len(stripped) / 2:
+            continue
+        return stripped[:150]
+    return None
+
+
 def extract_receipt_fields_llm(raw_text):
     """Ask an LLM to pull {category, total} out of arbitrary OCR'd receipt
     text - handles the range of real-world receipt formats the fixed keyword
@@ -126,10 +141,11 @@ text may be in any language, use any currency, and may not contain the word
 (after tax/tip if the receipt shows a breakdown, not a subtotal).
 
 Respond with ONLY a JSON object, no other text, in exactly this shape:
-{{"total": <number or null>, "category": <string>}}
+{{"total": <number or null>, "category": <string>, "merchant": <string or null>}}
 
 "total" must be null if you cannot find a total. "category" must be exactly
 one of: {", ".join(KNOWN_CATEGORIES)} - use "uncategorised" if none clearly fit.
+"merchant" is the store/business name the receipt is from, null if unclear.
 
 Receipt text:
 {raw_text}
@@ -169,26 +185,37 @@ Receipt text:
     if category not in KNOWN_CATEGORIES:
         category = "uncategorised"
 
-    return {"total": total, "category": category}
+    merchant = data.get("merchant")
+    if not isinstance(merchant, str) or not merchant.strip():
+        merchant = None
+
+    return {"total": total, "category": category, "merchant": merchant}
 
 
-def extract_receipt_fields(raw_text):
+def extract_receipt_fields(raw_text, use_llm=True):
     """Production entry point for /receipts/upload. Tries the LLM extraction
     above first - it generalises far better to receipt formats/languages the
     keyword+regex heuristics were never written for - and fills in whatever
     it leaves blank (or the whole result, if no OPENAI_API_KEY is configured
     or the call fails) from those heuristics, so a receipt is never rejected
-    just because the LLM found one field but not the other."""
-    llm_result = extract_receipt_fields_llm(raw_text)
+    just because the LLM found one field but not the other.
+
+    `use_llm=False` (the Settings page's AI Preferences toggle) skips the
+    LLM call entirely and goes straight to the heuristics, same as if no
+    OPENAI_API_KEY were configured."""
+    llm_result = extract_receipt_fields_llm(raw_text) if use_llm else None
     total = llm_result["total"] if llm_result else None
     category = llm_result["category"] if llm_result else "uncategorised"
+    merchant = llm_result["merchant"] if llm_result else None
 
     if total is None:
         total = extract_total(raw_text)
     if category == "uncategorised":
         category = classify_category(raw_text)
+    if merchant is None:
+        merchant = guess_merchant(raw_text)
 
-    return {"total": total, "category": category}
+    return {"total": total, "category": category, "merchant": merchant}
 
 
 def process_receipt(image_path):
