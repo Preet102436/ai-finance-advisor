@@ -57,6 +57,11 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
         auth_code: str
         state: str
         client_secret: str = "dev-secret"
+        # User-editable values from the "Select an account" step, so the
+        # sandbox flow looks like a real account picker instead of always
+        # persisting the same hardcoded type/number.
+        account_type: str | None = None
+        account_number_display: str | None = None
 
     def _no_auth():
         return None
@@ -118,7 +123,13 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
         account_id = None
         user_id = getattr(current_user, "user_id", None) or record["user_id"]
         if on_link_success is not None and db is not None and user_id is not None:
-            account_id = on_link_success(db, user_id, external_ref)
+            account_id = on_link_success(
+                db,
+                user_id,
+                external_ref,
+                account_type=payload.account_type,
+                account_number_display=payload.account_number_display,
+            )
 
         return {
             "account_id": account_id,

@@ -11,7 +11,7 @@ See README.md in this directory for local Postgres setup.
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 # backend/expense-ocr, backend/budgeting-forecasting, and backend/chatbot-savings
@@ -53,14 +53,29 @@ from routers import (  # noqa: E402
 app = FastAPI(title="AI-Powered Personal Finance Advisor")
 
 
-def _persist_linked_account(db, user_id, external_ref):
+def _persist_linked_account(db, user_id, external_ref, account_type=None, account_number_display=None):
     """Wired into link_account_api.py's router as on_link_success, so
-    /bank/link-account/callback writes a real bank_accounts row."""
+    /bank/link-account/callback writes a real bank_accounts row.
+
+    Only one linked account per user is supported right now (the Dashboard,
+    /bank/sync and the forecast/insights engines all assume a single
+    account) - block a second link attempt here with a clear message rather
+    than letting it silently create a second row that later makes
+    /bank/sync ambiguous and error with a raw "pass ?account_id=" message."""
+    existing = db.query(BankAccount).filter(BankAccount.user_id == user_id).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have a bank account connected. Disconnect it in Settings "
+            "before linking another.",
+        )
+
     account = BankAccount(
         user_id=user_id,
         provider_name="sandbox-bank",
         external_ref=external_ref,
-        account_type="checking",
+        account_type=account_type or "Everyday Checking",
+        account_number_display=account_number_display,
         currency="AUD",
     )
     db.add(account)
