@@ -7,6 +7,18 @@ export async function recommendBudgets({ windowMonths } = {}) {
   return apiClient.post(`/budgets/recommend${qs ? `?${qs}` : ""}`, undefined, { auth: true });
 }
 
+export async function fetchBudgets() {
+  return apiClient.get("/budgets", { auth: true });
+}
+
+export async function createOrUpdateBudget({ categoryName, amount }) {
+  return apiClient.post("/budgets", { category_name: categoryName, amount }, { auth: true });
+}
+
+export async function updateBudget(budgetId, amount) {
+  return apiClient.put(`/budgets/${budgetId}`, { amount }, { auth: true });
+}
+
 export async function generateForecast({ daysAhead } = {}) {
   const params = new URLSearchParams();
   if (daysAhead) params.set("days_ahead", daysAhead);
@@ -16,4 +28,8 @@ export async function generateForecast({ daysAhead } = {}) {
 
 export async function detectAnomalies() {
   return apiClient.post("/anomalies", undefined, { auth: true });
+}
+
+export async function fetchInsights() {
+  return apiClient.get("/insights", { auth: true });
 }
