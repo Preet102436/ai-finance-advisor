@@ -1,13 +1,86 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   fetchTransactionCategories,
   fetchTransactions,
-  linkBankAccount,
   syncBankAccount,
-  uploadReceipt,
+  updateTransactionCategory,
+  fetchReceiptForTransaction,
 } from "../lib/transactions";
+import { fetchBankAccounts } from "../lib/settings";
+import BankLinkModal from "../components/BankLinkModal";
+import ReceiptPreviewModal from "../components/ReceiptPreviewModal";
+import AddExpenseModal from "../components/AddExpenseModal";
 
-const EMPTY_FILTERS = { categoryId: "", startDate: "", endDate: "" };
+const EMPTY_FILTERS = { categoryId: "", startDate: "", endDate: "", search: "", source: "" };
+
+const SOURCE_LABELS = {
+  bank_sync: "Bank sync",
+  receipt_ocr: "Receipt scan",
+  manual: "Manual",
+};
+
+function TransactionDetailsModal({ txn, onClose }) {
+  const [receipt, setReceipt] = useState(null);
+  const [receiptLoading, setReceiptLoading] = useState(txn.source === "receipt_ocr");
+
+  useEffect(() => {
+    if (txn.source !== "receipt_ocr") return;
+    fetchReceiptForTransaction(txn.transaction_id)
+      .then(setReceipt)
+      .catch(() => {})
+      .finally(() => setReceiptLoading(false));
+  }, [txn]);
+
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Transaction details">
+      <div className="modal-card">
+        <div className="modal-header">
+          <h2>Transaction details</h2>
+          <button className="modal-close" onClick={onClose} aria-label="Close">
+            &times;
+          </button>
+        </div>
+        <dl className="details-list">
+          <dt>Date</dt>
+          <dd>{txn.txn_date}</dd>
+          <dt>Merchant</dt>
+          <dd>{txn.merchant || "-"}</dd>
+          <dt>Category</dt>
+          <dd>{txn.category_name || "uncategorised"}</dd>
+          <dt>Description</dt>
+          <dd>{txn.description || "-"}</dd>
+          <dt>Source</dt>
+          <dd>{SOURCE_LABELS[txn.source] || txn.source}</dd>
+          <dt>Amount</dt>
+          <dd>
+            {txn.amount < 0 ? "-" : "+"}${Math.abs(txn.amount).toFixed(2)}
+          </dd>
+        </dl>
+
+        {txn.source === "receipt_ocr" && (
+          <div className="receipt-info-block">
+            <h3 className="receipt-info-title">Receipt</h3>
+            {receiptLoading && <p className="empty-state">Loading receipt...</p>}
+            {!receiptLoading && !receipt && (
+              <p className="empty-state">Could not load the scanned receipt for this transaction.</p>
+            )}
+            {!receiptLoading && receipt && (
+              <>
+                <p className="receipt-info-meta">
+                  Scanned {receipt.processed_at ? new Date(receipt.processed_at).toLocaleString() : "-"}
+                </p>
+                <details className="raw-text-details">
+                  <summary>Show raw scanned text</summary>
+                  <pre className="raw-text-block">{receipt.ocr_raw_text}</pre>
+                </details>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
@@ -17,17 +90,29 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  const [linking, setLinking] = useState(false);
-  const [linkMessage, setLinkMessage] = useState(null);
-  const [bankLinked, setBankLinked] = useState(false);
-
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState(null);
 
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState(null);
-  const [uploadError, setUploadError] = useState("");
+  const [showBankModal, setShowBankModal] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [hasLinkedAccount, setHasLinkedAccount] = useState(false);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [receiptFile, setReceiptFile] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [detailsTxn, setDetailsTxn] = useState(null);
+
+  function reloadAccounts() {
+    fetchBankAccounts()
+      .then((accounts) => setHasLinkedAccount(accounts.length > 0))
+      .catch(() => {})
+      .finally(() => setAccountsLoaded(true));
+  }
+
+  useEffect(() => {
+    reloadAccounts();
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -36,24 +121,27 @@ export default function TransactionsPage() {
       categoryId: appliedFilters.categoryId || undefined,
       startDate: appliedFilters.startDate || undefined,
       endDate: appliedFilters.endDate || undefined,
+      search: appliedFilters.search || undefined,
+      source: appliedFilters.source || undefined,
     })
       .then(setTransactions)
       .catch((err) => setLoadError(err.message || "Failed to load transactions"))
       .finally(() => setLoading(false));
 
-    // Refetch alongside transactions (not just once on mount) so newly
-    // synced/uploaded categories show up in the filter dropdown too.
     fetchTransactionCategories()
       .then(setCategories)
-      .catch(() => {
-        // Filter dropdown just stays as-is; the transaction list load above
-        // surfaces the real error to the user.
-      });
+      .catch(() => {});
   }, [appliedFilters]);
 
   function applyFilters(e) {
     e.preventDefault();
     setAppliedFilters(filters);
+  }
+
+  function setFilterAndApply(key, value) {
+    const next = { ...filters, [key]: value };
+    setFilters(next);
+    setAppliedFilters(next);
   }
 
   function clearFilters() {
@@ -65,20 +153,6 @@ export default function TransactionsPage() {
     setAppliedFilters((prev) => ({ ...prev }));
   }
 
-  async function handleLinkBank() {
-    setLinking(true);
-    setLinkMessage(null);
-    try {
-      await linkBankAccount();
-      setBankLinked(true);
-      setLinkMessage({ type: "success", text: "Bank account linked. You can now sync transactions." });
-    } catch (err) {
-      setLinkMessage({ type: "error", text: err.message || "Failed to link bank account" });
-    } finally {
-      setLinking(false);
-    }
-  }
-
   async function handleSync() {
     setSyncing(true);
     setSyncMessage(null);
@@ -87,28 +161,25 @@ export default function TransactionsPage() {
       setSyncMessage({ type: "success", text: `Synced ${result.synced} new transaction(s).` });
       if (result.synced > 0) reloadTransactions();
     } catch (err) {
-      setSyncMessage({ type: "error", text: err.message || "Sync failed" });
+      setSyncMessage({ type: "error", text: err.message || "Sync failed. Have you linked a bank account yet?" });
     } finally {
       setSyncing(false);
     }
   }
 
-  async function handleUpload(e) {
-    e.preventDefault();
-    if (!selectedFile) return;
-    setUploading(true);
-    setUploadError("");
-    setUploadResult(null);
+  function handleFilePicked(e) {
+    const file = e.target.files[0];
+    if (file) setReceiptFile(file);
+    e.target.value = "";
+  }
+
+  async function handleCategoryChange(transactionId, newCategory) {
+    if (!newCategory.trim()) return;
     try {
-      const result = await uploadReceipt(selectedFile);
-      setUploadResult(result);
-      setSelectedFile(null);
-      e.target.reset();
+      await updateTransactionCategory(transactionId, newCategory.trim());
       reloadTransactions();
-    } catch (err) {
-      setUploadError(err.message || "Upload failed");
     } finally {
-      setUploading(false);
+      setEditingCategoryId(null);
     }
   }
 
@@ -117,26 +188,32 @@ export default function TransactionsPage() {
       <div className="page-header">
         <h1>Transactions</h1>
         <div className="page-header-actions">
-          <button className="btn btn-secondary" onClick={handleLinkBank} disabled={linking || bankLinked}>
-            {linking ? "Linking..." : bankLinked ? "Bank account linked" : "Link bank account"}
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowBankModal(true)}
+            disabled={!accountsLoaded || hasLinkedAccount}
+            title={hasLinkedAccount ? "Disconnect your current account in Settings before linking another" : undefined}
+          >
+            {hasLinkedAccount ? "Bank account linked" : "Link bank account"}
           </button>
-          <button className="btn" onClick={handleSync} disabled={syncing}>
+          <button className="btn btn-secondary" onClick={handleSync} disabled={syncing}>
             {syncing ? "Syncing..." : "Sync bank account"}
+          </button>
+          <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+            Scan receipt
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFilePicked}
+            style={{ display: "none" }}
+          />
+          <button className="btn" onClick={() => setShowExpenseModal(true)}>
+            + Add transaction
           </button>
         </div>
       </div>
-
-      <p className="empty-state">
-        New here? Click "Link bank account" once to connect the demo sandbox account, then
-        "Sync bank account" to pull in transactions. Already linked in an earlier session? Just
-        sync.
-      </p>
-
-      {linkMessage && (
-        <p className={linkMessage.type === "error" ? "status-banner status-error" : "status-banner status-success"}>
-          {linkMessage.text}
-        </p>
-      )}
 
       {syncMessage && (
         <p className={syncMessage.type === "error" ? "status-banner status-error" : "status-banner status-success"}>
@@ -146,10 +223,19 @@ export default function TransactionsPage() {
 
       <form className="filters-bar" onSubmit={applyFilters}>
         <label>
+          Search merchant
+          <input
+            type="text"
+            value={filters.search}
+            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+            placeholder="e.g. Woolworths"
+          />
+        </label>
+        <label>
           Category
           <select
             value={filters.categoryId}
-            onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
+            onChange={(e) => setFilterAndApply("categoryId", e.target.value)}
           >
             <option value="">All categories</option>
             {categories.map((c) => (
@@ -157,6 +243,18 @@ export default function TransactionsPage() {
                 {c.name}
               </option>
             ))}
+          </select>
+        </label>
+        <label>
+          Source
+          <select
+            value={filters.source}
+            onChange={(e) => setFilterAndApply("source", e.target.value)}
+          >
+            <option value="">All sources</option>
+            <option value="bank_sync">Bank sync</option>
+            <option value="receipt_ocr">Receipt scan</option>
+            <option value="manual">Manual</option>
           </select>
         </label>
         <label>
@@ -185,7 +283,7 @@ export default function TransactionsPage() {
       {!loading && !loadError && (
         transactions.length === 0 ? (
           <p className="empty-state">
-            No transactions yet. Try "Sync bank account" or upload a receipt below.
+            No transactions yet. Link a bank account and sync, scan a receipt, or add an expense manually.
           </p>
         ) : (
           <div className="table-wrap">
@@ -198,18 +296,46 @@ export default function TransactionsPage() {
                   <th>Description</th>
                   <th>Source</th>
                   <th className="amount-col">Amount</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {transactions.map((t) => (
                   <tr key={t.transaction_id}>
                     <td>{t.txn_date}</td>
-                    <td>{t.category_name || "uncategorised"}</td>
+                    <td>
+                      {editingCategoryId === t.transaction_id ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          defaultValue={t.category_name || ""}
+                          className="inline-category-input"
+                          onBlur={(e) => handleCategoryChange(t.transaction_id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") e.target.blur();
+                            if (e.key === "Escape") setEditingCategoryId(null);
+                          }}
+                        />
+                      ) : (
+                        <button
+                          className="category-edit-chip"
+                          onClick={() => setEditingCategoryId(t.transaction_id)}
+                          title="Click to edit category"
+                        >
+                          {t.category_name || "uncategorised"}
+                        </button>
+                      )}
+                    </td>
                     <td>{t.merchant || "-"}</td>
                     <td>{t.description || "-"}</td>
-                    <td>{t.source}</td>
+                    <td>{SOURCE_LABELS[t.source] || t.source}</td>
                     <td className={"amount-col " + (t.amount < 0 ? "amount-negative" : "amount-positive")}>
                       {t.amount < 0 ? "-" : "+"}${Math.abs(t.amount).toFixed(2)}
+                    </td>
+                    <td>
+                      <button className="btn-link" onClick={() => setDetailsTxn(t)}>
+                        Details
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -219,28 +345,26 @@ export default function TransactionsPage() {
         )
       )}
 
-      <div className="upload-card">
-        <h2>Upload a receipt</h2>
-        <p>We'll run OCR on it, guess the category and total, and add it as a transaction.</p>
-        <form onSubmit={handleUpload}>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setSelectedFile(e.target.files[0] || null)}
-          />
-          <button type="submit" className="btn" disabled={!selectedFile || uploading}>
-            {uploading ? "Uploading..." : "Upload receipt"}
-          </button>
-        </form>
+      {showBankModal && (
+        <BankLinkModal onClose={() => setShowBankModal(false)} onConnected={reloadAccounts} />
+      )}
 
-        {uploadError && <p className="status-banner status-error">{uploadError}</p>}
-        {uploadResult && (
-          <p className="status-banner status-success">
-            Predicted category: <strong>{uploadResult.predicted_category}</strong> - predicted total:{" "}
-            <strong>${uploadResult.predicted_total.toFixed(2)}</strong>
-          </p>
-        )}
-      </div>
+      {receiptFile && (
+        <ReceiptPreviewModal
+          file={receiptFile}
+          onClose={() => setReceiptFile(null)}
+          onConfirmed={() => reloadTransactions()}
+        />
+      )}
+
+      {showExpenseModal && (
+        <AddExpenseModal
+          onClose={() => setShowExpenseModal(false)}
+          onCreated={() => reloadTransactions()}
+        />
+      )}
+
+      {detailsTxn && <TransactionDetailsModal txn={detailsTxn} onClose={() => setDetailsTxn(null)} />}
     </div>
   );
 }
