@@ -1,11 +1,12 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { logout } from "../lib/auth";
+import AlertsBell from "./AlertsBell";
 
 const NAV_ITEMS = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/transactions", label: "Transactions" },
-  { to: "/chat", label: "Chat" },
-  { to: "/settings", label: "Settings" },
+  { to: "/dashboard", label: "Dashboard", icon: "📊" },
+  { to: "/transactions", label: "Transactions", icon: "💳" },
+  { to: "/chat", label: "Chat", icon: "💬" },
+  { to: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function Layout() {
@@ -19,7 +20,9 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="sidebar-brand">AI Finance Advisor</div>
+        <div className="sidebar-brand">
+          <span aria-hidden="true">💰</span> AI Finance Advisor
+        </div>
         <nav>
           {NAV_ITEMS.map((item) => (
             <NavLink
@@ -27,6 +30,9 @@ export default function Layout() {
               to={item.to}
               className={({ isActive }) => "sidebar-link" + (isActive ? " active" : "")}
             >
+              <span className="sidebar-link-icon" aria-hidden="true">
+                {item.icon}
+              </span>
               {item.label}
             </NavLink>
           ))}
@@ -36,6 +42,9 @@ export default function Layout() {
         </button>
       </aside>
       <main className="content">
+        <div className="content-topbar">
+          <AlertsBell />
+        </div>
         <Outlet />
       </main>
     </div>
