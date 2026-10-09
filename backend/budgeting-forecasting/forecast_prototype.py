@@ -124,7 +124,7 @@ def detect_anomalies(rows, z_threshold=3.0):
         sd = pstdev(cat_values) or 1e-6
         z = abs((r["amount"] - m) / sd)
         if z >= z_threshold:
-            anomalies.append({**r, "z_score": round(z, 2)})
+            anomalies.append({**r, "z_score": round(z, 2), "category_mean": round(m, 2)})
     return anomalies
 
 

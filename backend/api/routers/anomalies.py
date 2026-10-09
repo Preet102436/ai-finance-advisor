@@ -21,6 +21,43 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/anomalies", tags=["anomalies"])
 
 
+@router.get("", response_model=list[AnomalyOut])
+def list_anomalies(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Read-only: returns already-flagged anomalies for the current user,
+    most recent first. Doesn't recompute anything (that's what POST
+    /anomalies is for) - cheap enough to call from a notifications bell on
+    every page without re-running detection or writing to the DB each time.
+    """
+    rows = (
+        db.query(Anomaly, Transaction, Category.name)
+        .join(Transaction, Anomaly.transaction_id == Transaction.transaction_id)
+        .join(BankAccount, Transaction.account_id == BankAccount.account_id)
+        .outerjoin(Category, Transaction.category_id == Category.category_id)
+        .filter(BankAccount.user_id == current_user.user_id)
+        .order_by(Anomaly.detected_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        AnomalyOut(
+            anomaly_id=a.anomaly_id,
+            transaction_id=t.transaction_id,
+            category_id=t.category_id,
+            category_name=category_name or "unknown",
+            txn_date=t.txn_date,
+            amount=float(t.amount),
+            merchant=t.merchant,
+            z_score=float(a.anomaly_score),
+            reason=a.reason or "",
+        )
+        for a, t, category_name in rows
+    ]
+
+
 @router.post("", response_model=list[AnomalyOut])
 def detect_and_store_anomalies(
     lookback_days: int = 180,
@@ -83,7 +120,12 @@ def detect_and_store_anomalies(
 
         results = []
         for f in flagged:
-            reason = f"amount is a {f['z_score']}-sigma outlier vs its category's history"
+            category_mean = f.get("category_mean") or 0
+            if category_mean:
+                ratio = abs(f["amount"]) / abs(category_mean)
+                reason = f"Unusual spending detected - {ratio:.1f}x higher than this category's normal amount"
+            else:
+                reason = f"amount is a {f['z_score']}-sigma outlier vs its category's history"
 
             anomaly = db.query(Anomaly).filter(Anomaly.transaction_id == f["transaction_id"]).first()
             if anomaly:
