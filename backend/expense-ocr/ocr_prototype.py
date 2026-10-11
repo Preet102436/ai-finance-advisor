@@ -14,26 +14,38 @@ Usage:
 """
 
 import argparse
-import json
-import logging
 import os
 import re
-
-logger = logging.getLogger(__name__)
+import shutil
+from pathlib import Path
 
 try:
     import pytesseract
-    from PIL import Image
+    from PIL import Image, ImageOps
     OCR_AVAILABLE = True
-    # pytesseract shells out to the `tesseract` binary via PATH by default,
-    # which Windows installs frequently don't add automatically. TESSERACT_CMD
-    # (set in backend/api/.env, already loaded into the process environment
-    # by the time this module is imported from the running app) points
-    # straight at the binary so a PATH edit + terminal restart isn't required.
-    if os.environ.get("TESSERACT_CMD"):
-        pytesseract.pytesseract.tesseract_cmd = os.environ["TESSERACT_CMD"]
 except ImportError:
     OCR_AVAILABLE = False
+
+# Default install locations for the Tesseract binary on Windows, where the
+# installer doesn't add it to PATH. Checked only when TESSERACT_CMD isn't
+# set and `tesseract` isn't already on PATH.
+WINDOWS_TESSERACT_PATHS = [
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+]
+
+# Receipts are usually small and photographed at an angle - anything
+# narrower than this is upscaled before OCR so Tesseract can read it.
+MIN_OCR_WIDTH = 1000
+
+
+class OCRUnavailableError(RuntimeError):
+    """The OCR engine (pytesseract / the tesseract binary) can't be used."""
+
+
+class InvalidImageError(ValueError):
+    """The uploaded file isn't an image Pillow can open."""
+
 
 CATEGORY_KEYWORDS = {
     "groceries": [
@@ -63,31 +75,106 @@ CATEGORY_KEYWORDS = {
     ],
 }
 
-KNOWN_CATEGORIES = list(CATEGORY_KEYWORDS.keys()) + ["uncategorised"]
+
+def _configure_tesseract():
+    """Point pytesseract at the tesseract binary. Honours TESSERACT_CMD
+    (see backend/api/.env.example), then PATH, then the default Windows
+    install locations."""
+    configured = os.getenv("TESSERACT_CMD")
+    if configured:
+        pytesseract.pytesseract.tesseract_cmd = configured
+        return
+    if shutil.which("tesseract"):
+        return
+    for candidate in WINDOWS_TESSERACT_PATHS:
+        if Path(candidate).exists():
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            return
+
+
+def _prepare_image(image):
+    """Light clean-up that makes phone photos of receipts far more
+    readable: honour the EXIF rotation, convert to greyscale, upscale small
+    images, and stretch the contrast."""
+    image = ImageOps.exif_transpose(image)
+    image = image.convert("L")
+    if image.width < MIN_OCR_WIDTH:
+        scale = MIN_OCR_WIDTH / image.width
+        image = image.resize((MIN_OCR_WIDTH, int(image.height * scale)), Image.LANCZOS)
+    return ImageOps.autocontrast(image)
 
 
 def extract_text(image_path):
     if not OCR_AVAILABLE:
-        raise RuntimeError(
-            "pytesseract/Pillow not installed. Run: "
-            "pip install pytesseract pillow --break-system-packages"
+        raise OCRUnavailableError(
+            "pytesseract/Pillow not installed. Run: pip install pytesseract pillow"
         )
-    image = Image.open(image_path)
-    return pytesseract.image_to_string(image)
+    try:
+        with Image.open(image_path) as raw:
+            image = _prepare_image(raw)
+    except (OSError, ValueError) as exc:
+        raise InvalidImageError("That file isn't a readable image.") from exc
+
+    _configure_tesseract()
+    try:
+        text = pytesseract.image_to_string(image)
+        # Block mode reads a single column of text, which suits most
+        # receipts - used as a second pass when the default layout misses
+        # the total.
+        if extract_total(text) is None:
+            text_block = pytesseract.image_to_string(image, config="--psm 6")
+            if extract_total(text_block) is not None:
+                text = text_block
+    except pytesseract.TesseractNotFoundError as exc:
+        raise OCRUnavailableError(
+            "Tesseract is not installed or not on PATH. Install it, or set "
+            "TESSERACT_CMD in backend/api/.env to the tesseract executable."
+        ) from exc
+    return text
+
+
+# A money amount like 45.20, $1,234.50, 45,20 or 45. 20 (common OCR slip).
+_AMOUNT = r"\$?\s*(\d{1,3}(?:[,\s]\d{3})*|\d+)\s?[.,]\s?(\d{2})(?!\d)"
+_TOTAL_LINE = re.compile(
+    r"(grand\s*total|total\s*due|amount\s*due|balance\s*due|total)", re.IGNORECASE
+)
+_NOT_TOTAL = re.compile(r"sub\s*-?\s*total|total\s*(savings|discount|items|qty|gst|tax)", re.IGNORECASE)
+
+
+def _parse_amount(whole, cents):
+    return float(re.sub(r"[,\s]", "", whole) + "." + cents)
 
 
 def extract_total(raw_text):
-    """Very simple heuristic: on the first line containing 'total', take the
-    last two-decimal amount on that line. Real receipts often put a currency
-    code (e.g. "Total :   CHF   54.50") or wide column-alignment whitespace
-    between the label and the right-aligned amount, so this scans the whole
-    line instead of capping the gap to a fixed number of characters."""
-    for line in raw_text.splitlines():
-        if "total" not in line.lower():
+    """Find the receipt total: the last line labelled total / amount due
+    (ignoring subtotal, GST and savings lines) that has an amount on it.
+    Falls back to the largest amount on the receipt if no line is labelled."""
+    if not raw_text:
+        return None
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+
+    total = None
+    for line in lines:
+        if not _TOTAL_LINE.search(line) or _NOT_TOTAL.search(line):
             continue
-        amounts = re.findall(r"\d+\.\d{2}", line)
+        amounts = re.findall(_AMOUNT, line)
         if amounts:
-            return float(amounts[-1])
+            total = _parse_amount(*amounts[-1])
+    if total is not None:
+        return total
+
+    if not any(_TOTAL_LINE.search(line) for line in lines):
+        return None
+    all_amounts = [_parse_amount(*a) for line in lines for a in re.findall(_AMOUNT, line)]
+    return max(all_amounts) if all_amounts else None
+
+
+def extract_merchant(raw_text):
+    """Best guess at the store name: the first line with a few letters in it."""
+    for line in (raw_text or "").splitlines():
+        line = line.strip()
+        if len(re.findall(r"[A-Za-z]", line)) >= 3:
+            return line[:150]
     return None
 
 
@@ -97,125 +184,6 @@ def classify_category(raw_text):
         if any(kw in text_lower for kw in keywords):
             return category
     return "uncategorised"
-
-
-def guess_merchant(raw_text):
-    """Heuristic fallback: receipts conventionally print the merchant/store
-    name as the first line. Skips blank lines and lines that are mostly
-    digits (a receipt/order number sometimes printed above the name)."""
-    for line in raw_text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        digit_count = sum(ch.isdigit() for ch in stripped)
-        if digit_count > len(stripped) / 2:
-            continue
-        return stripped[:150]
-    return None
-
-
-def extract_receipt_fields_llm(raw_text):
-    """Ask an LLM to pull {category, total} out of arbitrary OCR'd receipt
-    text - handles the range of real-world receipt formats the fixed keyword
-    list and regex below can't (foreign-language items/labels, a currency
-    code or symbol in an unexpected place, no literal "TOTAL" line at all, a
-    subtotal + tax + tip to reconcile, ...).
-
-    Mirrors chatbot_prototype.py's call_llm(): same OPENAI_API_KEY env var,
-    same "gpt-5" model, same offline behaviour - returns None (rather than
-    raising) when no key is configured or the call fails for any reason, so
-    extract_receipt_fields() below always has the heuristic fallback to use.
-    """
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return None
-
-    try:
-        import openai
-    except ImportError:
-        return None
-
-    prompt = f"""You extract structured data from OCR'd receipt text. The
-text may be in any language, use any currency, and may not contain the word
-"total" at all - use judgement to find the final amount actually paid
-(after tax/tip if the receipt shows a breakdown, not a subtotal).
-
-Respond with ONLY a JSON object, no other text, in exactly this shape:
-{{"total": <number or null>, "category": <string>, "merchant": <string or null>}}
-
-"total" must be null if you cannot find a total. "category" must be exactly
-one of: {", ".join(KNOWN_CATEGORIES)} - use "uncategorised" if none clearly fit.
-"merchant" is the store/business name the receipt is from, null if unclear.
-
-Receipt text:
-{raw_text}
-"""
-
-    try:
-        client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-5",
-            # "gpt-5" is a reasoning model that spends completion tokens on
-            # hidden reasoning before writing any visible output - 100 and
-            # 500 were both seen to come back empty in practice, so this
-            # gives it enough room to reason AND still write the JSON.
-            max_completion_tokens=2000,
-            response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": prompt}],
-        )
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError(
-                f"LLM returned no content (finish_reason={response.choices[0].finish_reason!r})"
-            )
-        data = json.loads(content)
-    except Exception:
-        logger.exception(
-            "LLM receipt-field extraction failed; falling back to keyword/regex heuristics"
-        )
-        return None
-
-    total = data.get("total")
-    try:
-        total = float(total) if total is not None else None
-    except (TypeError, ValueError):
-        total = None
-
-    category = data.get("category")
-    if category not in KNOWN_CATEGORIES:
-        category = "uncategorised"
-
-    merchant = data.get("merchant")
-    if not isinstance(merchant, str) or not merchant.strip():
-        merchant = None
-
-    return {"total": total, "category": category, "merchant": merchant}
-
-
-def extract_receipt_fields(raw_text, use_llm=True):
-    """Production entry point for /receipts/upload. Tries the LLM extraction
-    above first - it generalises far better to receipt formats/languages the
-    keyword+regex heuristics were never written for - and fills in whatever
-    it leaves blank (or the whole result, if no OPENAI_API_KEY is configured
-    or the call fails) from those heuristics, so a receipt is never rejected
-    just because the LLM found one field but not the other.
-
-    `use_llm=False` (the Settings page's AI Preferences toggle) skips the
-    LLM call entirely and goes straight to the heuristics, same as if no
-    OPENAI_API_KEY were configured."""
-    llm_result = extract_receipt_fields_llm(raw_text) if use_llm else None
-    total = llm_result["total"] if llm_result else None
-    category = llm_result["category"] if llm_result else "uncategorised"
-    merchant = llm_result["merchant"] if llm_result else None
-
-    if total is None:
-        total = extract_total(raw_text)
-    if category == "uncategorised":
-        category = classify_category(raw_text)
-    if merchant is None:
-        merchant = guess_merchant(raw_text)
-
-    return {"total": total, "category": category, "merchant": merchant}
 
 
 def process_receipt(image_path):
