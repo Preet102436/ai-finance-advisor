@@ -20,9 +20,24 @@ class UserOut(BaseModel):
     user_id: int
     full_name: str
     email: EmailStr
+    phone: str | None = None
+    date_of_birth: date | None = None
+    location: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class UserProfileUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=150)
+    phone: str | None = Field(default=None, max_length=30)
+    date_of_birth: date | None = None
+    location: str | None = Field(default=None, max_length=150)
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=255)
 
 
 class Token(BaseModel):
@@ -49,16 +64,6 @@ class BudgetUpdate(BaseModel):
     amount: float = Field(gt=0)
 
 
-class InsightOut(BaseModel):
-    severity: str  # "info" | "warning" | "critical"
-    message: str
-    category_name: str | None = None
-
-
-class ChatRatingUpdate(BaseModel):
-    rating: str = Field(pattern="^(up|down)$")
-
-
 class ForecastPoint(BaseModel):
     forecast_date: date
     predicted_balance: float
@@ -78,6 +83,23 @@ class CategoryOut(BaseModel):
     name: str
 
 
+class TransactionCreate(BaseModel):
+    txn_date: date
+    amount: float
+    merchant: str | None = Field(default=None, max_length=150)
+    description: str | None = Field(default=None, max_length=255)
+    category_name: str | None = Field(default=None, max_length=100)
+
+
+class TransactionUpdate(BaseModel):
+    # All optional - only the fields actually sent get changed.
+    txn_date: date | None = None
+    amount: float | None = None
+    merchant: str | None = Field(default=None, max_length=150)
+    description: str | None = Field(default=None, max_length=255)
+    category_name: str | None = Field(default=None, max_length=100)
+
+
 class TransactionOut(BaseModel):
     transaction_id: int
     account_id: int
@@ -93,7 +115,6 @@ class TransactionOut(BaseModel):
 class SavingsSuggestionOut(BaseModel):
     category: str
     overspend: float
-    annual_savings: float
     top_merchant: str | None = None
     merchant_total_spent: float | None = None
     merchant_visit_count: int | None = None
@@ -108,25 +129,6 @@ class ConsentUpdate(BaseModel):
     data_processing_consent: bool
 
 
-class SettingsOut(BaseModel):
-    data_processing_consent: bool
-    ai_enabled: bool
-
-
-class SettingsUpdate(BaseModel):
-    data_processing_consent: bool | None = None
-    ai_enabled: bool | None = None
-
-
-class BankAccountOut(BaseModel):
-    account_id: int
-    provider_name: str
-    account_type: str | None = None
-    account_number_display: str | None = None
-    currency: str | None = None
-    linked_at: datetime
-
-
 class AnomalyOut(BaseModel):
     anomaly_id: int
     transaction_id: int
@@ -137,75 +139,3 @@ class AnomalyOut(BaseModel):
     merchant: str | None = None
     z_score: float
     reason: str
-
-
-class TransactionCreate(BaseModel):
-    amount: float
-    txn_date: date
-    category_name: str | None = None
-    merchant: str | None = None
-    description: str | None = None
-    account_id: int | None = None
-
-
-class TransactionCategoryUpdate(BaseModel):
-    category_name: str = Field(min_length=1, max_length=100)
-
-
-class CsvImportRowError(BaseModel):
-    row: int
-    reason: str
-
-
-class CsvImportResult(BaseModel):
-    total_rows: int
-    imported: int
-    skipped: list[CsvImportRowError]
-
-
-class ReceiptPreviewOut(BaseModel):
-    receipt_id: int
-    predicted_merchant: str | None = None
-    predicted_total: float | None = None
-    predicted_category: str
-    predicted_date: date
-    raw_text: str
-
-
-class ReceiptConfirm(BaseModel):
-    total: float
-    category_name: str = Field(min_length=1, max_length=100)
-    merchant: str | None = None
-    txn_date: date
-
-
-class ReceiptConfirmOut(BaseModel):
-    receipt_id: int
-    transaction_id: int
-    category_name: str
-    total: float
-
-
-class ReceiptOut(BaseModel):
-    receipt_id: int
-    transaction_id: int | None = None
-    ocr_raw_text: str | None = None
-    processed_at: datetime | None = None
-
-
-class UserProfileUpdate(BaseModel):
-    phone: str | None = Field(default=None, max_length=30)
-    address: str | None = Field(default=None, max_length=255)
-    monthly_income: float | None = None
-
-
-class UserProfileOut(BaseModel):
-    user_id: int
-    full_name: str
-    email: EmailStr
-    phone: str | None = None
-    address: str | None = None
-    monthly_income: float | None = None
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
