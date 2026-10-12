@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from models import BankAccount, Budget, Category, Forecast, Transaction
+from models import BankAccount, Budget, Category, Transaction
 
 
 def load_user_transactions(
@@ -37,6 +37,7 @@ def load_user_transactions(
 
     return [
         {
+            "id": txn.transaction_id,
             "date": txn.txn_date.isoformat(),
             "category": category_name or "uncategorised",
             "amount": float(txn.amount),
@@ -61,40 +62,3 @@ def load_user_budgets(db: Session, user_id: int):
         # category is its latest budget.
         budgets.setdefault(category_name, float(budget.recommended_amount))
     return budgets
-
-
-def load_latest_forecast(db: Session, user_id: int):
-    """The most recently generated forecast batch (all rows share the same
-    created_at from one POST /forecasts call), summarised as the chatbot
-    prompt needs it. None if the user hasn't generated a forecast yet (e.g.
-    hasn't opened the Dashboard this session) - /forecasts isn't run
-    automatically on every chat message, only on Dashboard load, to avoid a
-    chat question silently recomputing and overwriting stored forecast data.
-    """
-    latest_run = (
-        db.query(Forecast.created_at)
-        .filter(Forecast.user_id == user_id)
-        .order_by(Forecast.created_at.desc())
-        .first()
-    )
-    if latest_run is None:
-        return None
-
-    points = (
-        db.query(Forecast)
-        .filter(Forecast.user_id == user_id, Forecast.created_at == latest_run[0])
-        .order_by(Forecast.forecast_date)
-        .all()
-    )
-    if not points:
-        return None
-
-    first, last = points[0], points[-1]
-    return {
-        "method": first.model_version or "unknown",
-        "days_ahead": len(points),
-        "start_date": first.forecast_date.isoformat(),
-        "start_balance": float(first.predicted_balance),
-        "end_date": last.forecast_date.isoformat(),
-        "end_balance": float(last.predicted_balance),
-    }

@@ -1,78 +1,101 @@
 import { apiClient } from "./apiClient";
 
-export async function fetchTransactions({ categoryId, startDate, endDate, search, source } = {}) {
+// Omit limit/offset to get every matching transaction back as a plain
+// array (what the Dashboard's month-to-date spending breakdown wants).
+// Pass limit to get a paginated page back instead - the Transactions
+// page does this; the response shape then becomes
+// { items, total, limit, offset } rather than a plain array.
+export async function fetchTransactions({ categoryId, startDate, endDate, limit, offset } = {}) {
   const params = new URLSearchParams();
   if (categoryId) params.set("category_id", categoryId);
   if (startDate) params.set("start_date", startDate);
   if (endDate) params.set("end_date", endDate);
-  if (search) params.set("search", search);
-  if (source) params.set("source", source);
+  if (limit !== undefined) params.set("limit", limit);
+  if (offset !== undefined) params.set("offset", offset);
   const qs = params.toString();
   return apiClient.get(`/transactions${qs ? `?${qs}` : ""}`, { auth: true });
-}
-
-export async function fetchTransaction(transactionId) {
-  return apiClient.get(`/transactions/${transactionId}`, { auth: true });
 }
 
 export async function fetchTransactionCategories() {
   return apiClient.get("/transactions/categories", { auth: true });
 }
 
-export async function createTransaction(payload) {
-  return apiClient.post("/transactions", payload, { auth: true });
+export async function fetchBankAccounts() {
+  return apiClient.get("/bank/accounts", { auth: true });
 }
 
-export async function importTransactionsCsv(file) {
+// Unlinks a bank account - its transactions go with it (the backend
+// cascades that), freeing the user up to link a different one.
+export async function deleteBankAccount(accountId) {
+  return apiClient.delete(`/bank/accounts/${accountId}`, { auth: true });
+}
+
+// accountId is only needed when the user has more than one linked account -
+// /bank/sync 400s with "Multiple accounts found" otherwise.
+export async function syncBankAccount(accountId) {
+  const qs = accountId ? `?account_id=${accountId}` : "";
+  return apiClient.post(`/bank/sync${qs}`, undefined, { auth: true });
+}
+
+export async function uploadReceipt(file, accountId) {
   const formData = new FormData();
   formData.append("file", file);
-  return apiClient.postForm("/transactions/import-csv", formData, { auth: true });
+  const qs = accountId ? `?account_id=${accountId}` : "";
+  return apiClient.postForm(`/receipts/upload${qs}`, formData, { auth: true });
 }
 
-export async function updateTransactionCategory(transactionId, categoryName) {
-  return apiClient.put(
-    `/transactions/${transactionId}/category`,
-    { category_name: categoryName },
-    { auth: true }
-  );
+export async function importTransactions(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiClient.postForm("/transactions/import", formData, { auth: true });
 }
 
-// Two-step OAuth-style bank link flow (see backend/expense-ocr/link_account_api.py):
-// step 1 issues an authorisation code (the "consent" step in the UI), step 2
-// exchanges it for a token and persists the bank_accounts row (the "select
-// account / connect" step). Split into two functions so the wizard UI can
-// show each step as it actually happens, instead of one instant jump.
-export async function startBankLink() {
-  return apiClient.post("/bank/link-account", undefined, { auth: true });
-}
-
-export async function completeBankLink(authCode, state, { accountType, accountNumberDisplay } = {}) {
+export async function addTransaction({ txnDate, amount, merchant, description, categoryName }) {
   return apiClient.post(
-    "/bank/link-account/callback",
+    "/transactions",
     {
-      auth_code: authCode,
-      state,
-      account_type: accountType,
-      account_number_display: accountNumberDisplay,
+      txn_date: txnDate,
+      amount,
+      merchant: merchant || undefined,
+      description: description || undefined,
+      category_name: categoryName || undefined,
     },
     { auth: true }
   );
 }
 
-export async function syncBankAccount() {
-  return apiClient.post("/bank/sync", undefined, { auth: true });
+// Edits any transaction in place, however it got there (bank sync, manual
+// entry, import, or a scanned receipt) - only the fields passed get changed.
+export async function updateTransaction(transactionId, { txnDate, amount, merchant, description, categoryName } = {}) {
+  return apiClient.put(
+    `/transactions/${transactionId}`,
+    {
+      txn_date: txnDate,
+      amount,
+      merchant,
+      description,
+      category_name: categoryName,
+    },
+    { auth: true }
+  );
 }
 
-export async function uploadReceipt(file) {
-  const formData = new FormData();
-  formData.append("file", file);
-  return apiClient.postForm("/receipts/upload", formData, { auth: true });
+export async function deleteTransaction(transactionId) {
+  return apiClient.delete(`/transactions/${transactionId}`, { auth: true });
 }
 
-export async function confirmReceipt(receiptId, payload) {
-  return apiClient.post(`/receipts/${receiptId}/confirm`, payload, { auth: true });
-}
-
-export async function fetchReceiptForTransaction(transactionId) {
-  return apiClient.get(`/receipts/by-transaction/${transactionId}`, { auth: true });
+// Two-step consent + mock-credentials bank-link flow. Step 1 posts consent
+// plus sandbox username/password and gets back an auth code; step 2
+// exchanges that code, completing the link (backend/expense-ocr/link_account_api.py).
+export async function linkBankAccount({ consent, username, password }) {
+  const step1 = await apiClient.post(
+    "/bank/link-account",
+    { consent, username, password },
+    { auth: true }
+  );
+  return apiClient.post(
+    "/bank/link-account/callback",
+    { auth_code: step1.auth_code, state: step1.state },
+    { auth: true }
+  );
 }

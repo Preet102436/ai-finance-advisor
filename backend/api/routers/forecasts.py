@@ -44,11 +44,21 @@ def generate_forecast(
 
     if account_id is None:
         if len(accounts) > 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Multiple accounts found; pass ?account_id= to choose one",
+            # Several linked accounts (e.g. the sandbox-bank link plus a manual/
+            # receipt-upload account) and the caller did not ask for a specific
+            # one - rather than dead-ending with an error the dashboard has no
+            # way to recover from, default to whichever account actually has
+            # transaction history to forecast from, picking the one with the
+            # most transactions if several do.
+            counts = dict(
+                db.query(Transaction.account_id, func.count(Transaction.transaction_id))
+                .filter(Transaction.account_id.in_([a.account_id for a in accounts]))
+                .group_by(Transaction.account_id)
+                .all()
             )
-        account = accounts[0]
+            account = max(accounts, key=lambda a: counts.get(a.account_id, 0))
+        else:
+            account = accounts[0]
     else:
         account = next((a for a in accounts if a.account_id == account_id), None)
         if account is None:

@@ -1,18 +1,18 @@
 """
-Integration test for POST /receipts/upload + POST /receipts/{id}/confirm.
+Integration test for POST /receipts/upload.
 Owner: Preetkumar Navinbhai Patel
 
 Exercises the real app end-to-end against the local Postgres database (see
 README.md for setup): registers a user, links a mock bank account, uploads a
-receipt (preview only, nothing saved as a transaction yet), confirms it, and
-checks matching receipts + transactions rows land in the database.
+receipt, and confirms matching receipts + transactions rows land in the
+database with the predicted category/total.
 
 Tesseract isn't installed in this dev environment, so - the same way
 ocr_prototype.py's own tests exercise the classifier via
 process_receipt_from_text() instead of a real image - this test patches
 extract_text() to return sample OCR-style text instead of actually running
-the OCR engine. Everything else (the upload, the confirm, the DB writes, the
-response) is the real code path.
+the OCR engine. Everything else (the upload, the DB writes, the response) is
+the real code path.
 
 Run with:
     pytest backend/api/test_receipts_upload.py
@@ -20,7 +20,6 @@ Run with:
 
 import io
 import uuid
-from datetime import date
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -34,7 +33,7 @@ client = TestClient(app)
 SAMPLE_RECEIPT_TEXT = "WOOLWORTHS SUPERMARKET\nMilk 3.50\nBread 4.20\nTOTAL   45.20"
 
 
-def test_uploaded_receipt_previews_then_confirms_into_transaction():
+def test_uploaded_receipt_creates_receipt_and_transaction():
     email = f"receipt_test_{uuid.uuid4().hex[:8]}@example.com"
     password = "supersecret123"
 
@@ -49,7 +48,11 @@ def test_uploaded_receipt_previews_then_confirms_into_transaction():
         assert login_resp.status_code == 200
         headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-        link_resp = client.post("/bank/link-account", headers=headers)
+        link_resp = client.post(
+            "/bank/link-account",
+            headers=headers,
+            json={"consent": True, "username": "demo_user", "password": "demo1234"},
+        )
         assert link_resp.status_code == 200
         link_data = link_resp.json()
 
@@ -70,65 +73,26 @@ def test_uploaded_receipt_previews_then_confirms_into_transaction():
             )
 
         assert upload_resp.status_code == 200
-        preview = upload_resp.json()
-        assert preview["predicted_category"] == "groceries"
-        assert preview["predicted_total"] == 45.20
-        # Case may come back normalised if an OPENAI_API_KEY is configured
-        # (LLM extraction) or verbatim from the heuristic fallback otherwise.
-        assert preview["predicted_merchant"].strip().lower() == "woolworths supermarket"
-        receipt_id = preview["receipt_id"]
+        upload_data = upload_resp.json()
+        assert upload_data["predicted_category"] == "groceries"
+        assert upload_data["predicted_total"] == 45.20
+        receipt_id = upload_data["receipt_id"]
+        transaction_id = upload_data["transaction_id"]
 
-        # Nothing should be saved as a transaction until confirmed.
         db = SessionLocal()
         try:
             receipt = db.get(Receipt, receipt_id)
             assert receipt is not None
-            assert receipt.transaction_id is None
-            assert receipt.ocr_raw_text == SAMPLE_RECEIPT_TEXT
-        finally:
-            db.close()
-
-        confirm_resp = client.post(
-            f"/receipts/{receipt_id}/confirm",
-            headers=headers,
-            json={
-                "total": preview["predicted_total"],
-                "category_name": preview["predicted_category"],
-                "merchant": preview["predicted_merchant"],
-                "txn_date": date.today().isoformat(),
-            },
-        )
-        assert confirm_resp.status_code == 200
-        confirm_data = confirm_resp.json()
-        transaction_id = confirm_data["transaction_id"]
-        assert confirm_data["total"] == 45.20
-        assert confirm_data["category_name"] == "groceries"
-
-        db = SessionLocal()
-        try:
-            receipt = db.get(Receipt, receipt_id)
             assert receipt.transaction_id == transaction_id
+            assert receipt.ocr_raw_text == SAMPLE_RECEIPT_TEXT
 
             transaction = db.get(Transaction, transaction_id)
             assert transaction is not None
             assert transaction.account_id == account_id
             assert transaction.source == "receipt_ocr"
-            assert transaction.merchant == preview["predicted_merchant"]
             assert float(transaction.amount) == -45.20
         finally:
             db.close()
-
-        # Confirming the same receipt twice should be rejected, not double-save.
-        reconfirm_resp = client.post(
-            f"/receipts/{receipt_id}/confirm",
-            headers=headers,
-            json={
-                "total": 45.20,
-                "category_name": "groceries",
-                "txn_date": date.today().isoformat(),
-            },
-        )
-        assert reconfirm_resp.status_code == 400
     finally:
         db = SessionLocal()
         try:
@@ -139,5 +103,5 @@ def test_uploaded_receipt_previews_then_confirms_into_transaction():
 
 
 if __name__ == "__main__":
-    test_uploaded_receipt_previews_then_confirms_into_transaction()
-    print("receipts upload/confirm test passed.")
+    test_uploaded_receipt_creates_receipt_and_transaction()
+    print("receipts upload test passed.")
