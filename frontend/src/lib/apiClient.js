@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 const TOKEN_KEY = "auth_token";
 
@@ -78,5 +78,6 @@ export const apiClient = {
   postForm: (path, formData, opts) =>
     request(path, { ...opts, method: "POST", body: formData, isFormData: true }),
   put: (path, body, opts) => request(path, { ...opts, method: "PUT", body }),
+  patch: (path, body, opts) => request(path, { ...opts, method: "PATCH", body }),
   delete: (path, opts) => request(path, { ...opts, method: "DELETE" }),
 };
