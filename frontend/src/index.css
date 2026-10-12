@@ -2631,7 +2631,14 @@ textarea {
     position: fixed;
     top: 0;
     left: 0;
+    /* 100vh on iOS Safari includes the area behind the bottom toolbar, which
+       hid the Log out button. dvh is the actually-visible height; the drawer
+       also scrolls and keeps clear of the home indicator as a fallback. */
     height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
     width: 240px;
     max-width: 80vw;
     z-index: 200;

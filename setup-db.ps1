@@ -9,7 +9,7 @@ $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $psql = (Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\psql.exe" | Select-Object -Last 1).FullName
 if (-not $psql) {
-    Write-Host "PostgreSQL not found in C:\Program Files\PostgreSQL. Install it first (see README.md)." -ForegroundColor Red
+    Write-Host "PostgreSQL not found in C:\Program Files\PostgreSQL. Install it first (see HOW-TO-RUN.txt)." -ForegroundColor Red
     exit 1
 }
 $env:PGPASSWORD = "postgres"

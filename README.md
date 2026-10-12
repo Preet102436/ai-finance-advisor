@@ -7,9 +7,10 @@ cash-flow forecasting, and anomaly detection.
 
 This is the COIT20273 capstone project (Term 2 2026).
 
-> **Want to try the running app with minimal setup?** On Windows, run
-> `INSTALL.bat` once, then double-click `START.bat` each time. Manual setup
-> instructions (any OS) are below.
+> **Want to try the running app with minimal setup?** See
+> [HOW-TO-RUN.txt](./HOW-TO-RUN.txt) - on Windows, run `INSTALL.bat` once, then
+> double-click `START.bat` each time. Manual setup instructions (any OS) are
+> below.
 
 ## Team
 
@@ -25,6 +26,16 @@ Fully integrated web application - a FastAPI + PostgreSQL backend and a React
 (Vite) frontend, with every subsystem below wired together behind real
 authentication and a shared database. The project is also responsive down to
 phone width (a hamburger-triggered slide-in sidebar below ~860px).
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, Vite, React Router |
+| Backend | Python 3.11+, FastAPI, SQLAlchemy, JWT auth |
+| Database | PostgreSQL 16 |
+| AI / ML | RAG chatbot (optional OpenAI, rule-based fallback), forecasting (Prophet if installed, moving-average fallback), Tesseract OCR |
+| Tooling | pytest |
 
 ## Features
 
@@ -45,9 +56,8 @@ phone width (a hamburger-triggered slide-in sidebar below ~860px).
   user's real transactions/budgets; falls back to a rule-based reasoning
   engine with no API key required (works out of the box).
 - **AI Insights** - pick a date range and get an AI-generated financial
-  summary, category breakdown, anomaly/
-  overspend flags with linked evidence transactions, and savings
-  suggestions - exportable as CSV or PDF.
+  summary, category breakdown, anomaly/overspend flags with linked evidence
+  transactions, and savings suggestions - exportable as CSV or PDF.
 - **Forecasting** - predictive balance forecast (Prophet when available,
   moving-average fallback) with a confidence band.
 - **Anomaly detection** - flags unusual transactions automatically.
@@ -75,6 +85,7 @@ ai-finance-advisor/
 │                                   #   by backend/api/routers/chat.py and savings.py
 ├── db/
 │   └── schema.sql                 # Full database schema
+├── sample-data/                   # Sample CSV import + OCR test receipts
 ├── docs/
 │   ├── er-diagram.md
 │   ├── budgeting-forecasting-design.md
@@ -82,12 +93,12 @@ ai-finance-advisor/
 │   ├── chatbot-savings-design.md
 │   └── meeting-minutes.md
 ├── INSTALL.bat / START.bat        # One-click Windows install and start
-└── setup-db.ps1                   # Windows database setup (used by INSTALL.bat)
+├── setup-db.ps1                   # Windows database setup (used by INSTALL.bat)
+├── TUNNEL.bat                     # Optional: share the running app over the internet
+└── HOW-TO-RUN.txt                 # Step-by-step Windows guide
 ```
 
 ## Running it
-
-IMPORTANT NOTE: If you have already finance_advisor, so you may get error while first time running so, please that delete finance_advisor DB then reinstall project using by INSTALL.bat file.
 
 ### Easiest on Windows
 
@@ -111,6 +122,8 @@ it installs the Python/Node packages from step 1-2 above and sets up the
 database for you, so you never need to type a `pip`, `npm`, or `psql`
 command yourself. After that, just double-click `START.bat` each time - it
 opens the backend, the frontend, and your browser at `http://localhost:5173`.
+`TUNNEL.bat` optionally shares that running app over the internet (e.g. to
+try it on a phone).
 
 **If something goes wrong:**
 
@@ -160,8 +173,7 @@ uvicorn main:app --reload
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # VITE_API_BASE_URL=http://localhost:8000 by default
-npm run dev
+npm run dev   # /api calls are proxied to the backend on :8000
 ```
 
 Open http://localhost:5173, click Register, and try it out.
@@ -184,6 +196,5 @@ running Postgres database (same `.env` as above) - it isn't mocked.
   provider is future work, not part of this assessment's scope.
 - `OPENAI_API_KEY` is optional everywhere it's used; omitting it degrades
   gracefully to rule-based logic rather than failing.
-- This setup is for local use/demonstration - the JWT
-  secret and DB password are development placeholders, not production
-  secrets.
+- This setup is for local use/demonstration - the JWT secret and DB password
+  are development placeholders, not production secrets.
