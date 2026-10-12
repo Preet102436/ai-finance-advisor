@@ -1,5 +1,5 @@
 """
-Integration test for POST /transactions/import-csv - bulk transaction
+Integration test for POST /transactions/import - bulk transaction
 import from a CSV file (source='csv_import').
 
 Covers: the exact sample CSV served to users at
@@ -33,7 +33,7 @@ def _register_login_and_link():
     login = client.post("/auth/login", json={"email": email, "password": password})
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    link = client.post("/bank/link-account", headers=headers).json()
+    link = client.post("/bank/link-account", headers=headers, json={"consent": True}).json()
     client.post(
         "/bank/link-account/callback",
         headers=headers,
@@ -57,7 +57,7 @@ def test_sample_csv_imports_cleanly():
     try:
         csv_bytes = SAMPLE_CSV_PATH.read_bytes()
         resp = client.post(
-            "/transactions/import-csv",
+            "/transactions/import",
             headers=headers,
             files={"file": ("sample-transactions.csv", io.BytesIO(csv_bytes), "text/csv")},
         )
@@ -96,7 +96,7 @@ def test_bad_rows_are_skipped_not_fatal():
             "2026-10-06,55.00,Second Good Row,income\n"  # valid
         )
         resp = client.post(
-            "/transactions/import-csv",
+            "/transactions/import",
             headers=headers,
             files={"file": ("bad.csv", io.BytesIO(csv_text.encode()), "text/csv")},
         )
@@ -116,7 +116,7 @@ def test_missing_required_column_is_rejected():
     try:
         csv_text = "merchant,category\nCorner Cafe,dining\n"
         resp = client.post(
-            "/transactions/import-csv",
+            "/transactions/import",
             headers=headers,
             files={"file": ("missing_columns.csv", io.BytesIO(csv_text.encode()), "text/csv")},
         )
@@ -130,7 +130,7 @@ def test_non_csv_file_is_rejected():
     email, headers = _register_login_and_link()
     try:
         resp = client.post(
-            "/transactions/import-csv",
+            "/transactions/import",
             headers=headers,
             files={"file": ("not-a-csv.txt", io.BytesIO(b"hello"), "text/plain")},
         )

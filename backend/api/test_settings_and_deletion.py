@@ -56,21 +56,16 @@ def test_consent_flag_defaults_false_and_can_be_toggled():
     try:
         get_resp = client.get("/settings", headers=headers)
         assert get_resp.status_code == 200
-        assert get_resp.json() == {"data_processing_consent": False, "ai_enabled": True}
+        assert get_resp.json() == {"data_processing_consent": False}
 
         put_resp = client.put(
             "/settings", headers=headers, json={"data_processing_consent": True}
         )
         assert put_resp.status_code == 200
-        assert put_resp.json() == {"data_processing_consent": True, "ai_enabled": True}
+        assert put_resp.json() == {"data_processing_consent": True}
 
         get_again = client.get("/settings", headers=headers)
-        assert get_again.json() == {"data_processing_consent": True, "ai_enabled": True}
-
-        # ai_enabled can be toggled independently, without touching consent.
-        ai_off_resp = client.put("/settings", headers=headers, json={"ai_enabled": False})
-        assert ai_off_resp.status_code == 200
-        assert ai_off_resp.json() == {"data_processing_consent": True, "ai_enabled": False}
+        assert get_again.json() == {"data_processing_consent": True}
     finally:
         db = SessionLocal()
         try:
@@ -88,7 +83,11 @@ def test_settings_requires_auth():
 def test_delete_me_cascades_every_linked_table():
     email, user_id, headers = _register_and_login()
 
-    link_resp = client.post("/bank/link-account", headers=headers)
+    link_resp = client.post(
+            "/bank/link-account",
+            headers=headers,
+            json={"consent": True, "username": "demo_user", "password": "demo1234"},
+        )
     link_data = link_resp.json()
     callback_resp = client.post(
         "/bank/link-account/callback",

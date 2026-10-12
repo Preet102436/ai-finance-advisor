@@ -30,7 +30,7 @@ def test_get_anomalies_is_read_only_and_matches_post():
         login = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        link = client.post("/bank/link-account", headers=headers).json()
+        link = client.post("/bank/link-account", headers=headers, json={"consent": True}).json()
         cb = client.post(
             "/bank/link-account/callback",
             headers=headers,
@@ -97,7 +97,7 @@ def test_receipt_lookup_by_transaction():
         login = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        link = client.post("/bank/link-account", headers=headers).json()
+        link = client.post("/bank/link-account", headers=headers, json={"consent": True}).json()
         client.post(
             "/bank/link-account/callback",
             headers=headers,

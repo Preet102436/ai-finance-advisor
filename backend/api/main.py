@@ -93,10 +93,17 @@ link_account_router = create_link_account_router(
     get_current_user_dependency=get_current_user,
 )
 
-# Allow the local Vite dev server (frontend/) to call this API cross-origin.
+# Allow the local Vite dev server (frontend/) to call this API cross-origin -
+# plus, via allow_origin_regex, any *.trycloudflare.com URL. Cloudflare's
+# free "quick tunnel" (cloudflared tunnel --url ...) hands out a fresh
+# random subdomain on every run, so a fixed allow_origins entry would need
+# editing each time; the regex covers it once, for sharing this app with a
+# couple of people without a public deployment. Remove the regex once that's
+# no longer needed.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"https://.*\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

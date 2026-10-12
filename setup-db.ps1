@@ -71,4 +71,11 @@ if ($hasUsers -ne "t") {
     Write-Host "   Tables already exist." -ForegroundColor Green
 }
 
+Write-Host "4) Making sure the schema is up to date..."
+$updates = Join-Path $root "db\schema_updates.sql"
+if (Test-Path $updates) {
+    & $psql -U postgres -h localhost -d finance_advisor -v ON_ERROR_STOP=1 -q -f $updates
+    Write-Host "   Schema up to date." -ForegroundColor Green
+}
+
 Write-Host "`nDatabase ready." -ForegroundColor Cyan

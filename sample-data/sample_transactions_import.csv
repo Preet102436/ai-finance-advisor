@@ -1,0 +1,21 @@
+Date,Description,Merchant,Amount,Category
+01/10/2026,Weekly groceries,Woolworths,-85.40,groceries
+01/10/2026,Fortnightly salary,Employer Pty Ltd,2500.00,income
+02/10/2026,Morning coffee,Cafe Nero,-4.50,dining
+03/10/2026,Streaming subscription,Netflix,-15.99,subscriptions
+03/10/2026,Electricity bill,EnergyCo,-120.00,utilities
+04/10/2026,Lunch with colleagues,Noodle House,-18.20,dining
+04/10/2026,Fuel top-up,Shell,-62.00,transport
+05/10/2026,Prescription medication,Chemist Warehouse,-23.50,health
+05/10/2026,Weekend groceries,Coles,-67.85,groceries
+06/10/2026,Movie tickets,Hoyts Cinema,-32.00,entertainment
+06/10/2026,Mobile phone plan,Telstra,-49.00,utilities
+07/10/2026,Monthly rent,Horizon Real Estate,-650.00,rent
+07/10/2026,Music subscription,Spotify,-11.99,subscriptions
+08/10/2026,Public transport top-up,Myki,-25.00,transport
+08/10/2026,Dinner out,The Rustic Table,-54.30,dining
+09/10/2026,Dentist appointment,Bright Smile Dental,-180.00,health
+09/10/2026,Freelance payment,Client Invoice #204,450.00,income
+10/10/2026,Parking fee,City Parking,-14.00,transport
+10/10/2026,Groceries,Aldi,-41.10,groceries
+11/10/2026,Internet bill,Optus,-79.00,utilities

@@ -36,7 +36,11 @@ def test_synced_transaction_appears_in_database():
         assert login_resp.status_code == 200
         headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-        link_resp = client.post("/bank/link-account", headers=headers)
+        link_resp = client.post(
+            "/bank/link-account",
+            headers=headers,
+            json={"consent": True, "username": "demo_user", "password": "demo1234"},
+        )
         assert link_resp.status_code == 200
         link_data = link_resp.json()
 

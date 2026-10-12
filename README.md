@@ -95,24 +95,53 @@ ai-finance-advisor/
 ├── INSTALL.bat / START.bat        # One-click Windows install and start
 ├── setup-db.ps1                   # Windows database setup (used by INSTALL.bat)
 ├── TUNNEL.bat                     # Optional: share the running app over the internet
-└── README.txt                 # Step-by-step Windows guide
+└── HOW-TO-RUN.txt                 # Step-by-step Windows guide
 ```
 
 ## Running it
 
 ### Easiest on Windows
 
-See [README.txt](./README.txt): run `INSTALL.bat` once (it installs
-the Python/Node packages and sets up the database), then double-click
-`START.bat` each time - it opens the backend, the frontend, and your browser
-at `http://localhost:5173`. `TUNNEL.bat` optionally shares that running app
-over the internet (e.g. to try it on a phone).
+**New to this? Start here - one-time setup, about 10 minutes:**
+
+1. **Python 3.11 or newer** - https://www.python.org/downloads/
+   During install, tick "Add python.exe to PATH". (`pip`, Python's package
+   installer, is bundled with Python - there's nothing extra to install for it.)
+2. **Node.js (LTS version)** - https://nodejs.org/
+3. **PostgreSQL 16 or 17** - https://www.postgresql.org/download/windows/
+   When the installer asks for a password, enter `postgres` and keep the
+   default port `5432`.
+4. *(Optional)* **Tesseract OCR** - only needed for receipt photo upload -
+   https://github.com/UB-Mannheim/tesseract/wiki - install to the default
+   folder `C:\Program Files\Tesseract-OCR\`.
+
+**Then, every time you want to run the app:**
+
+Right-click `INSTALL.bat` and choose "Run as administrator" the first time -
+it installs the Python/Node packages from step 1-2 above and sets up the
+database for you, so you never need to type a `pip`, `npm`, or `psql`
+command yourself. After that, just double-click `START.bat` each time - it
+opens the backend, the frontend, and your browser at `http://localhost:5173`.
+`TUNNEL.bat` optionally shares that running app over the internet (e.g. to
+try it on a phone).
+
+**If something goes wrong:**
+
+| Problem | Fix |
+|---|---|
+| "Python not found" / "Node.js not found" | Install it (step 1 or 2 above), close the window, run `INSTALL.bat` again. |
+| "Password reset failed" during install | Right-click `INSTALL.bat` > Run as administrator. |
+| "Failed to fetch" on login/register | The Backend window isn't running or shows an error - close both windows and double-click `START.bat` again. If it says "password authentication failed", run `INSTALL.bat` again as administrator. |
+| Blank page / can't connect right after `START.bat` | Wait a few seconds and refresh `http://localhost:5173` - the servers are still starting up. |
+| Port 8000 or 5173 already in use | An old copy is still running - close its windows, or restart your PC. |
+| Backend window shows `column ... does not exist` / register fails with a 500 or "Failed to fetch" | Your local database is from an older version of this project. Close the Backend/Frontend windows and right-click `INSTALL.bat` > Run as administrator again - it now patches an existing database up to the current schema automatically (see `db/schema_updates.sql`), no data lost. |
+| Receipt upload says Tesseract not found | Install Tesseract (step 4 above), or add `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe` to `backend\api\.env`. |
+| `'pytest' is not recognized` / `'uvicorn' is not recognized` | Use `python -m pytest` or `python -m uvicorn main:app --reload` instead - pip installed them, but their standalone `.exe` isn't always on PATH. `python -m <tool>` always works since `python` itself already does. |
 
 ### Manual setup (Windows, Mac, or Linux)
 
-IMPORTANT NOTE: If you have already finance_advisor, so you may get error while first time running so, please that delete finance_advisor  DB then reinstall project using by INSTALL.bat file.
-
-Prerequisites: PostgreSQL 16, Python 3.11+, Node.js 18+.
+Prerequisites: PostgreSQL 16, Python 3.11+ (`pip` comes bundled with it, no
+separate install needed), Node.js 18+.
 
 **1. Database**
 
@@ -153,7 +182,7 @@ Open http://localhost:5173, click Register, and try it out.
 
 ```bash
 cd backend/api
-pytest
+python -m pytest
 ```
 
 The suite registers/logs in a fresh test user for each test, so it needs a

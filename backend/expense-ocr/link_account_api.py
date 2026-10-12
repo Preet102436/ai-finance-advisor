@@ -27,6 +27,8 @@ except ImportError:
 
 from sandbox_auth_test import MockSandboxProvider, external_ref_for_storage
 
+from sqlalchemy import text
+
 CLIENT_ID = "ai-finance-advisor-dev"
 REDIRECT_URI = "http://localhost:3000/oauth/callback"
 
@@ -53,15 +55,13 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
             "fastapi/pydantic not installed. Run: pip install fastapi uvicorn pydantic"
         )
 
+    class LinkAccountRequest(BaseModel):
+        consent: bool
+
     class CallbackRequest(BaseModel):
         auth_code: str
         state: str
         client_secret: str = "dev-secret"
-        # User-editable values from the "Select an account" step, so the
-        # sandbox flow looks like a real account picker instead of always
-        # persisting the same hardcoded type/number.
-        account_type: str | None = None
-        account_number_display: str | None = None
 
     def _no_auth():
         return None
@@ -77,19 +77,45 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
     pending_states = {}
 
     @router.post("/link-account")
-    def link_account(current_user=Depends(auth_dependency)):
-        """Step 1: user clicks "Link account" in the web app.
+    def link_account(
+        payload: LinkAccountRequest,
+        current_user=Depends(auth_dependency),
+        db=Depends(db_dependency),
+    ):
+        """Step 1: user ticks the consent checkbox and clicks "Authorise" in
+        the web app - no bank login screen, nothing to type.
 
-        In the real flow this would return a redirect URL to the sandbox
-        provider's consent screen. MockSandboxProvider has no real consent
-        screen, so we issue the authorisation code directly here, letting the
-        rest of the flow be exercised without a live provider.
+        Real Open Banking flows redirect to the provider's own consent +
+        login screen; MockSandboxProvider has no real one, so the frontend
+        renders an equivalent consent-only step itself and posts it here.
+        Consent is the only thing required before an authorisation code is
+        issued - there are no real credentials to check in a mocked sandbox,
+        so this intentionally doesn't ask for or verify any
+        (MockSandboxProvider.verify_credentials() still exists for anyone
+        wiring up a real provider later, it's just not called from here).
         """
+        if not payload.consent:
+            raise HTTPException(
+                status_code=400,
+                detail="You must consent to data access before linking a bank account.",
+            )
+
+        user_id = getattr(current_user, "user_id", None)
+        if db is not None and user_id is not None:
+            # Record the consent on the user's own account too, reusing the
+            # same data_processing_consent flag exposed via GET/PUT /settings,
+            # rather than only ever living as a one-off flag on this request.
+            db.execute(
+                text("UPDATE users SET data_processing_consent = TRUE WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+            db.commit()
+
         state = secrets.token_urlsafe(8)
         auth_code, returned_state = provider.authorize(CLIENT_ID, REDIRECT_URI, state)
         pending_states[returned_state] = {
             "auth_code": auth_code,
-            "user_id": getattr(current_user, "user_id", None),
+            "user_id": user_id,
         }
         return {"auth_code": auth_code, "state": returned_state, "redirect_uri": REDIRECT_URI}
 
@@ -123,13 +149,7 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
         account_id = None
         user_id = getattr(current_user, "user_id", None) or record["user_id"]
         if on_link_success is not None and db is not None and user_id is not None:
-            account_id = on_link_success(
-                db,
-                user_id,
-                external_ref,
-                account_type=payload.account_type,
-                account_number_display=payload.account_number_display,
-            )
+            account_id = on_link_success(db, user_id, external_ref)
 
         return {
             "account_id": account_id,

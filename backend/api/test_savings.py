@@ -40,7 +40,11 @@ def test_suggestion_names_the_overspend_category_and_merchant():
         assert login_resp.status_code == 200
         headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-        link_resp = client.post("/bank/link-account", headers=headers)
+        link_resp = client.post(
+            "/bank/link-account",
+            headers=headers,
+            json={"consent": True, "username": "demo_user", "password": "demo1234"},
+        )
         link_data = link_resp.json()
         callback_resp = client.post(
             "/bank/link-account/callback",
@@ -145,7 +149,11 @@ def test_no_suggestions_when_nothing_is_over_budget():
         login_resp = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-        link_resp = client.post("/bank/link-account", headers=headers)
+        link_resp = client.post(
+            "/bank/link-account",
+            headers=headers,
+            json={"consent": True, "username": "demo_user", "password": "demo1234"},
+        )
         link_data = link_resp.json()
         client.post(
             "/bank/link-account/callback",
