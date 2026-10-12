@@ -102,7 +102,7 @@ ai-finance-advisor/
 
 ### Easiest on Windows
 
-See [HOW-TO-RUN.txt](./HOW-TO-RUN.txt): run `INSTALL.bat` once (it installs
+See [README.txt](./README.txt): run `INSTALL.bat` once (it installs
 the Python/Node packages and sets up the database), then double-click
 `START.bat` each time - it opens the backend, the frontend, and your browser
 at `http://localhost:5173`. `TUNNEL.bat` optionally shares that running app
