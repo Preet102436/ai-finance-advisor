@@ -1,14 +1,30 @@
 # One-time local database setup for the AI Finance Advisor.
 # Makes the "postgres" user's password match backend\api\.env (postgres),
 # creates the finance_advisor database, and loads db\schema.sql.
-# Run from an Administrator PowerShell:
+# Normally run by INSTALL.bat. To run on its own (as Administrator):
 #   powershell -ExecutionPolicy Bypass -File .\setup-db.ps1
+# Also creates backend\api\.env from .env.example if it doesn't exist yet.
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $psql = (Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\psql.exe" | Select-Object -Last 1).FullName
-if (-not $psql) { Write-Host "PostgreSQL not found in C:\Program Files\PostgreSQL." -ForegroundColor Red; exit 1 }
+if (-not $psql) {
+    Write-Host "PostgreSQL not found in C:\Program Files\PostgreSQL. Install it first (see HOW-TO-RUN.txt)." -ForegroundColor Red
+    exit 1
+}
 $env:PGPASSWORD = "postgres"
+
+# Backend settings file - created from the template on first run, with the
+# database password this script sets up and a fresh random login secret.
+$envFile = Join-Path $root "backend\api\.env"
+if (-not (Test-Path $envFile)) {
+    $secret = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Maximum 256 }))
+    (Get-Content (Join-Path $root "backend\api\.env.example")) `
+        -replace '^DB_PASSWORD=.*', 'DB_PASSWORD=postgres' `
+        -replace '^JWT_SECRET_KEY=.*', "JWT_SECRET_KEY=$secret" |
+        Set-Content $envFile
+    Write-Host "Created backend\api\.env" -ForegroundColor Green
+}
 
 function Test-Login {
     & $psql -U postgres -h localhost -tAc "select 1" 2>$null | Out-Null
@@ -30,7 +46,10 @@ if (Test-Login) {
         Copy-Item "$hba.bak" $hba -Force
         Restart-Service postgresql* ; Start-Sleep -Seconds 3
     }
-    if (-not (Test-Login)) { Write-Host "   Password reset failed." -ForegroundColor Red; exit 1 }
+    if (-not (Test-Login)) {
+        Write-Host "   Password reset failed - run INSTALL.bat with right-click > Run as administrator." -ForegroundColor Red
+        exit 1
+    }
     Write-Host "   Password set." -ForegroundColor Green
 }
 
@@ -52,4 +71,4 @@ if ($hasUsers -ne "t") {
     Write-Host "   Tables already exist." -ForegroundColor Green
 }
 
-Write-Host "`nDone. Restart the backend (Ctrl+C, then: python -m uvicorn main:app --reload)." -ForegroundColor Cyan
+Write-Host "`nDatabase ready." -ForegroundColor Cyan

@@ -8,9 +8,8 @@ cash-flow forecasting, and anomaly detection.
 This is the COIT20273 capstone project (Term 2 2026).
 
 > **Want to try the running app with minimal setup?** See
-> [QUICKSTART.md](./QUICKSTART.md) - one Docker command starts the database,
-> backend, and frontend together, no local Python/Node/Postgres install
-> needed. Manual setup instructions (if you'd rather run it natively) are
+> [HOW-TO-RUN.txt](./HOW-TO-RUN.txt) - on Windows, run `INSTALL.bat` once, then
+> double-click `START.bat` each time. Manual setup instructions (any OS) are
 > below.
 
 ## Team
@@ -32,10 +31,10 @@ phone width (a hamburger-triggered slide-in sidebar below ~860px).
 
 - **Accounts** - register/login (JWT), profile, settings, account deletion
   (cascades every linked table).
-- **Bank linking** - mocked Open Banking OAuth2 flow (consent + sandbox
-  login), sync transactions, unlink/relink at any time. Manual transaction
-  entry and CSV/Excel import both work with or without a linked bank
-  account.
+- **Bank linking** - mocked Open Banking OAuth2-style flow (choose a bank,
+  click through consent, pick an account) - no login form, nothing to type.
+  Sync transactions, unlink/relink at any time. Manual transaction entry and
+  CSV/Excel import both work with or without a linked bank account.
 - **Transactions** - full CRUD (add, edit, delete, categorise) on every
   transaction, with filtering and CSV/Excel import.
 - **Receipts** - photo upload with OCR (Tesseract) + category/total/merchant
@@ -77,22 +76,27 @@ ai-finance-advisor/
 │                                   #   by backend/api/routers/chat.py and savings.py
 ├── db/
 │   └── schema.sql                 # Full database schema
-└── docs/
-    ├── er-diagram.md
-    ├── budgeting-forecasting-design.md
-    ├── expense-ocr-design.md
-    ├── chatbot-savings-design.md
-    └── meeting-minutes.md
+├── docs/
+│   ├── er-diagram.md
+│   ├── budgeting-forecasting-design.md
+│   ├── expense-ocr-design.md
+│   ├── chatbot-savings-design.md
+│   └── meeting-minutes.md
+├── INSTALL.bat / START.bat        # One-click Windows install and start
+├── setup-db.ps1                   # Windows database setup (used by INSTALL.bat)
+└── HOW-TO-RUN.txt                 # Step-by-step Windows guide
 ```
 
 ## Running it
 
-### Option A: Docker (recommended, no local installs needed)
+### Easiest on Windows
 
-See [QUICKSTART.md](./QUICKSTART.md) - `docker compose up --build`, then open
-http://localhost:5173.
+See [HOW-TO-RUN.txt](./HOW-TO-RUN.txt): run `INSTALL.bat` once (it installs
+the Python/Node packages and sets up the database), then double-click
+`START.bat` each time - it opens the backend, the frontend, and your browser
+at `http://localhost:5173`.
 
-### Option B: Run natively
+### Manual setup (Windows, Mac, or Linux)
 
 Prerequisites: PostgreSQL 16, Python 3.11+, Node.js 18+.
 
@@ -144,11 +148,12 @@ running Postgres database (same `.env` as above) - it isn't mocked.
 
 ## Notes / known limitations
 
-- The bank-link flow is a mocked Open Banking sandbox (demo credentials
-  `demo_user` / `demo1234`), not a real provider - swapping in a real one is
-  future work, not part of this assessment's scope.
+- The bank-link flow is a mocked Open Banking sandbox - click "Link a bank
+  account", choose the sandbox demo bank, and click through the consent
+  screens. There's no login form and nothing to type; swapping in a real
+  provider is future work, not part of this assessment's scope.
 - `OPENAI_API_KEY` is optional everywhere it's used; omitting it degrades
   gracefully to rule-based logic rather than failing.
-- This setup (and the Docker one) is for local use/demonstration - the JWT
+- This setup is for local use/demonstration - the JWT
   secret and DB password are development placeholders, not production
   secrets.
