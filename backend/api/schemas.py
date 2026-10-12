@@ -139,3 +139,14 @@ class AnomalyOut(BaseModel):
     merchant: str | None = None
     z_score: float
     reason: str
+
+
+class ReceiptConfirmRequest(BaseModel):
+    """Body for POST /receipts/{receipt_id}/confirm - the user's reviewed
+    (possibly corrected) values from ReceiptPreviewModal.jsx, applied over
+    the OCR-predicted ones upload_receipt() already saved."""
+
+    total: float = Field(gt=0)
+    category_name: str | None = Field(default=None, max_length=100)
+    merchant: str | None = Field(default=None, max_length=150)
+    txn_date: date | None = None

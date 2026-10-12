@@ -1,10 +1,15 @@
 """POST /receipts/upload - accept a receipt image, run it through
 ocr_prototype.py's extraction/classification logic, and write matching
 receipts + transactions rows.
+POST /receipts/{receipt_id}/confirm - apply the user's reviewed (possibly
+corrected) total/category/merchant/date from ReceiptPreviewModal.jsx over
+the OCR-predicted ones upload_receipt() already saved.
+GET /receipts/by-transaction/{transaction_id} - look up the receipt (OCR
+text, image) linked to one transaction, for the transaction details view.
 
 TODO (not implemented yet):
 - GET  /receipts        list current user's receipts
-- GET  /receipts/{id}   fetch a receipt (incl. ocr_raw_text, linked transaction)
+- GET  /receipts/{id}   fetch a receipt by its own id
 """
 
 import logging
@@ -27,6 +32,7 @@ from ocr_prototype import (
     extract_total,
 )
 from routers.transactions import _get_or_create_manual_account
+from schemas import ReceiptConfirmRequest
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +97,7 @@ def store_receipt_and_transaction(
     (see test_receipts_upload.py) without needing a real OCR engine."""
     predicted_total = extract_total(raw_text)
     predicted_category = classify_category(raw_text)
+    predicted_merchant = extract_merchant(raw_text)
 
     if predicted_total is None:
         raise HTTPException(
@@ -112,7 +119,7 @@ def store_receipt_and_transaction(
             category_id=category.category_id if category else None,
             amount=-predicted_total,
             description=f"Receipt upload ({predicted_category})",
-            merchant=extract_merchant(raw_text),
+            merchant=predicted_merchant,
             txn_date=date.today(),
             source="receipt_ocr",
         )
@@ -144,6 +151,11 @@ def store_receipt_and_transaction(
         "transaction_id": transaction.transaction_id,
         "predicted_category": predicted_category,
         "predicted_total": predicted_total,
+        # Extra, additive fields (on top of the two tested above) so the
+        # review-before-save UI (ReceiptPreviewModal.jsx) can pre-fill the
+        # merchant and show the raw scanned text without a second request.
+        "predicted_merchant": predicted_merchant,
+        "raw_text": raw_text,
     }
 
 
@@ -188,3 +200,86 @@ def upload_receipt(
         )
 
     return store_receipt_and_transaction(db, current_user, raw_text, str(stored_path), account_id)
+
+
+@router.post("/{receipt_id}/confirm")
+def confirm_receipt(
+    receipt_id: int,
+    payload: ReceiptConfirmRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Finalises a scanned receipt with the user's reviewed/corrected total,
+    category, merchant and date (see ReceiptPreviewModal.jsx). upload_receipt()
+    already created the linked transaction from the OCR-predicted values, so
+    this just applies whatever the user confirmed over the top of it."""
+    receipt = (
+        db.query(Receipt)
+        .filter(Receipt.receipt_id == receipt_id, Receipt.user_id == current_user.user_id)
+        .first()
+    )
+    if receipt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
+
+    transaction = (
+        db.query(Transaction).filter(Transaction.transaction_id == receipt.transaction_id).first()
+    )
+    if transaction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Linked transaction not found")
+
+    try:
+        # Receipts represent spend - keep the same negative-amount convention
+        # store_receipt_and_transaction() used when it first created this row.
+        transaction.amount = -abs(payload.total)
+        if payload.category_name:
+            category = _get_or_create_category(db, payload.category_name)
+            transaction.category_id = category.category_id
+        if payload.merchant:
+            transaction.merchant = payload.merchant
+        if payload.txn_date:
+            transaction.txn_date = payload.txn_date
+
+        db.commit()
+        db.refresh(transaction)
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to confirm receipt_id=%s for user_id=%s", receipt_id, current_user.user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save the confirmed receipt. Please try again.",
+        )
+
+    return {
+        "receipt_id": receipt.receipt_id,
+        "transaction_id": transaction.transaction_id,
+        "amount": float(transaction.amount),
+        "merchant": transaction.merchant,
+        "txn_date": transaction.txn_date,
+    }
+
+
+@router.get("/by-transaction/{transaction_id}")
+def get_receipt_by_transaction(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Powers the transaction details view: look up the receipt (OCR text,
+    image path) linked to one transaction, scoped to the current user. 404s
+    for a transaction with no receipt (manual entry, CSV import, bank sync)
+    instead of crashing, so the UI can just hide the 'view receipt' link."""
+    receipt = (
+        db.query(Receipt)
+        .filter(Receipt.transaction_id == transaction_id, Receipt.user_id == current_user.user_id)
+        .first()
+    )
+    if receipt is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No receipt for this transaction")
+
+    return {
+        "receipt_id": receipt.receipt_id,
+        "transaction_id": receipt.transaction_id,
+        "ocr_raw_text": receipt.ocr_raw_text,
+        "image_path": receipt.image_path,
+        "processed_at": receipt.processed_at,
+    }

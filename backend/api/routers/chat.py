@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from chatbot_prototype import build_context_block, build_prompt, call_llm, retrieve_relevant_transactions
 from database import get_db
 from deps import get_current_user
-from finance_data import load_user_budgets, load_user_transactions
+from finance_data import load_latest_forecast, load_user_budgets, load_user_transactions
 from finance_insights import (
     build_summary_context_block,
     compute_financial_summary,
@@ -52,6 +52,63 @@ class ChatResponse(BaseModel):
     retrieved_context: str
     sources: list[str] = []
     suggested_followups: list[str] = []
+
+
+def _offline_fallback_answer(question: str, summary: dict, forecast: dict | None, summary_context: str) -> str:
+    """Grounded fallback text for when no LLM is reachable (no
+    OPENAI_API_KEY, or the call failed or returned nothing) and
+    detect_intent()/deterministic_answer() didn't already handle the
+    question with a real computed answer - i.e. intent == "general".
+
+    Regression fix: every such question used to collapse to the exact same
+    "I can't reach the AI model... + summary_context" string, so two
+    different general-intent questions (e.g. a budget check and a forecast
+    question) came back byte-identical (see test_chat_offline_fallback.py).
+    This varies the answer by topic, using the same real summary/forecast
+    data the rest of the module already has on hand, so unrelated questions
+    stop looking like a canned response."""
+    q = question.lower()
+    prefix = "I can't reach the AI model right now, but"
+
+    if "forecast" in q or "predict" in q:
+        if forecast is None:
+            return (
+                f"{prefix} you haven't generated a balance forecast yet - visit the "
+                "Forecasts section of the Dashboard to generate one from your real "
+                "transaction history."
+            )
+        return (
+            f"{prefix} here's your most recent forecast: the {forecast['method']} model "
+            f"predicts a balance of ${forecast['end_balance']:.2f} by {forecast['end_date']} "
+            f"({forecast['days_ahead']} day(s) ahead)."
+        )
+
+    if "budget" in q or "overspend" in q:
+        over = [c for c in summary["category_vs_budget"] if c["over_budget"]]
+        if over:
+            lines = [
+                f"- {c['category']}: ${c['spent']:.2f} spent vs a ${c['budget']:.2f} budget"
+                for c in over
+            ]
+            return f"{prefix} here's your budget check:\n" + "\n".join(lines)
+        if summary["category_vs_budget"]:
+            return f"{prefix} you're within budget in every category that has one set this month."
+        return (
+            f"{prefix} you don't have any budgets set yet - the Budgets page can "
+            "generate some from your spending history."
+        )
+
+    if "sav" in q:
+        if summary["category_deltas"]:
+            top = summary["category_deltas"][:3]
+            lines = [f"- {c['category']}: ${c['this_month']:.2f} this month" for c in top]
+            return (
+                f"{prefix} here are your top spending categories, the best place to look "
+                "for savings:\n" + "\n".join(lines)
+            )
+        return f"{prefix} here's your financial summary:\n\n{summary_context}"
+
+    return f"{prefix} here's your financial summary:\n\n{summary_context}"
 
 
 @router.post("/messages", response_model=ChatResponse)
@@ -92,28 +149,34 @@ def send_message(
             payload.question, transactions=transactions, known_categories=budgets.keys()
         )
         transaction_context = build_context_block(retrieved)
-        prompt = build_prompt(payload.question, retrieved, budgets=budgets)
+        forecast = load_latest_forecast(db, current_user.user_id)
+        prompt = build_prompt(payload.question, retrieved, budgets=budgets, forecast=forecast)
+        summary_context = retrieved_context  # keep the summary text for the no-LLM fallback message below
         prompt = (
             "Here is the user's overall financial summary for this month:\n"
-            f"{retrieved_context}\n\n" + prompt
+            f"{summary_context}\n\n" + prompt
         )
+
+        # Whether or not the LLM is reachable, retrieved_context (the API
+        # response field) should show the real transactions this answer is
+        # grounded in rather than staying on the generic summary block - it
+        # previously only updated on a successful LLM call, so the no-API-key
+        # fallback answer never showed the transaction-level evidence behind it.
+        retrieved_context = transaction_context or retrieved_context
 
         llm_answer = call_llm(prompt)
         if llm_answer:
             answer = llm_answer
-            retrieved_context = transaction_context or retrieved_context
             sources = [f"Transactions matching your question ({len(retrieved)})"]
             sources.append("This month's financial summary")
         else:
             # None: no OPENAI_API_KEY configured. Empty string: the model call
             # succeeded but returned no content (seen with real "gpt-5" calls).
-            # Either way, fall back to the financial summary itself rather than
-            # a generic "I can't help" message - it's always real, grounded
-            # information even when the LLM is unavailable.
-            answer = (
-                "I can't reach the AI model right now, but here's your financial summary:\n\n"
-                + retrieved_context
-            )
+            # Either way, fall back to real data rather than a generic "I
+            # can't help" message - and vary it by question topic so two
+            # different offline questions don't come back identical (see
+            # _offline_fallback_answer's docstring).
+            answer = _offline_fallback_answer(payload.question, summary, forecast, summary_context)
 
     followups = suggested_followups(intent, summary)
 

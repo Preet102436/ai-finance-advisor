@@ -34,7 +34,7 @@ def test_different_offline_questions_get_different_answers():
         # configured in this environment, so the test is deterministic.
         client.put("/settings", headers=headers, json={"ai_enabled": False})
 
-        link = client.post("/bank/link-account", headers=headers).json()
+        link = client.post("/bank/link-account", headers=headers, json={"consent": True}).json()
         client.post(
             "/bank/link-account/callback",
             headers=headers,

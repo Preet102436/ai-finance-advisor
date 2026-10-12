@@ -121,6 +121,7 @@ opens the backend, the frontend, and your browser at `http://localhost:5173`.
 | Port 8000 or 5173 already in use | An old copy is still running - close its windows, or restart your PC. |
 | Backend window shows `column ... does not exist` / register fails with a 500 or "Failed to fetch" | Your local database is from an older version of this project. Close the Backend/Frontend windows and right-click `INSTALL.bat` > Run as administrator again - it now patches an existing database up to the current schema automatically (see `db/schema_updates.sql`), no data lost. |
 | Receipt upload says Tesseract not found | Install Tesseract (step 4 above), or add `TESSERACT_CMD=C:\Program Files\Tesseract-OCR\tesseract.exe` to `backend\api\.env`. |
+| `'pytest' is not recognized` / `'uvicorn' is not recognized` | Use `python -m pytest` or `python -m uvicorn main:app --reload` instead - pip installed them, but their standalone `.exe` isn't always on PATH. `python -m <tool>` always works since `python` itself already does. |
 
 ### Manual setup (Windows, Mac, or Linux)
 
@@ -167,7 +168,7 @@ Open http://localhost:5173, click Register, and try it out.
 
 ```bash
 cd backend/api
-pytest
+python -m pytest
 ```
 
 The suite registers/logs in a fresh test user for each test, so it needs a

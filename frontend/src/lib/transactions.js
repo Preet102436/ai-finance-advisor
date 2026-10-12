@@ -5,11 +5,12 @@ import { apiClient } from "./apiClient";
 // Pass limit to get a paginated page back instead - the Transactions
 // page does this; the response shape then becomes
 // { items, total, limit, offset } rather than a plain array.
-export async function fetchTransactions({ categoryId, startDate, endDate, limit, offset } = {}) {
+export async function fetchTransactions({ categoryId, startDate, endDate, search, limit, offset } = {}) {
   const params = new URLSearchParams();
   if (categoryId) params.set("category_id", categoryId);
   if (startDate) params.set("start_date", startDate);
   if (endDate) params.set("end_date", endDate);
+  if (search) params.set("search", search);
   if (limit !== undefined) params.set("limit", limit);
   if (offset !== undefined) params.set("offset", offset);
   const qs = params.toString();
@@ -42,6 +43,18 @@ export async function uploadReceipt(file, accountId) {
   formData.append("file", file);
   const qs = accountId ? `?account_id=${accountId}` : "";
   return apiClient.postForm(`/receipts/upload${qs}`, formData, { auth: true });
+}
+
+// Finalises a scanned receipt with the user's reviewed (possibly corrected)
+// total/category/merchant/date - uploadReceipt() above already created the
+// linked transaction with the OCR-predicted values; this applies whatever
+// the user confirmed over the top of it. Used by ReceiptPreviewModal.jsx.
+export async function confirmReceipt(receiptId, { total, category_name, merchant, txn_date }) {
+  return apiClient.post(
+    `/receipts/${receiptId}/confirm`,
+    { total, category_name, merchant, txn_date },
+    { auth: true }
+  );
 }
 
 export async function importTransactions(file) {
@@ -84,9 +97,26 @@ export async function deleteTransaction(transactionId) {
   return apiClient.delete(`/transactions/${transactionId}`, { auth: true });
 }
 
-// Two-step consent + mock-credentials bank-link flow. Step 1 posts consent
-// plus sandbox username/password and gets back an auth code; step 2
-// exchanges that code, completing the link (backend/expense-ocr/link_account_api.py).
+// Two-step, consent-only bank-link flow - no bank login screen, nothing to
+// type (backend/expense-ocr/link_account_api.py). Step 1 posts consent and
+// gets back an auth code; step 2 exchanges that code, completing the link.
+// Used by components/BankLinkModal.jsx's wizard.
+export async function startBankLink() {
+  return apiClient.post("/bank/link-account", { consent: true }, { auth: true });
+}
+
+export async function completeBankLink(authCode, state) {
+  return apiClient.post(
+    "/bank/link-account/callback",
+    { auth_code: authCode, state },
+    { auth: true }
+  );
+}
+
+// Older single-call wrapper around the same two endpoints, still used by
+// TransactionsPage.jsx's inline link form. username/password are accepted
+// for backwards compatibility but no longer required or checked by the
+// backend - see startBankLink() above for the current no-login flow.
 export async function linkBankAccount({ consent, username, password }) {
   const step1 = await apiClient.post(
     "/bank/link-account",

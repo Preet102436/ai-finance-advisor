@@ -57,8 +57,6 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
 
     class LinkAccountRequest(BaseModel):
         consent: bool
-        username: str
-        password: str
 
     class CallbackRequest(BaseModel):
         auth_code: str
@@ -84,24 +82,23 @@ def create_router(on_link_success=None, get_db_dependency=None, get_current_user
         current_user=Depends(auth_dependency),
         db=Depends(db_dependency),
     ):
-        """Step 1: user ticks the consent checkbox, enters their (sandbox)
-        bank username/password, and clicks "Link account" in the web app.
+        """Step 1: user ticks the consent checkbox and clicks "Authorise" in
+        the web app - no bank login screen, nothing to type.
 
         Real Open Banking flows redirect to the provider's own consent +
         login screen; MockSandboxProvider has no real one, so the frontend
-        renders an equivalent consent + mock-credentials step itself and
-        posts it here. Consent is required, and credentials are checked
-        against the mocked sandbox login before an authorisation code is
-        issued, so the flow fails the same way a real bad-login attempt
-        would.
+        renders an equivalent consent-only step itself and posts it here.
+        Consent is the only thing required before an authorisation code is
+        issued - there are no real credentials to check in a mocked sandbox,
+        so this intentionally doesn't ask for or verify any
+        (MockSandboxProvider.verify_credentials() still exists for anyone
+        wiring up a real provider later, it's just not called from here).
         """
         if not payload.consent:
             raise HTTPException(
                 status_code=400,
                 detail="You must consent to data access before linking a bank account.",
             )
-        if not provider.verify_credentials(payload.username, payload.password):
-            raise HTTPException(status_code=401, detail="Invalid bank sandbox username or password.")
 
         user_id = getattr(current_user, "user_id", None)
         if db is not None and user_id is not None:

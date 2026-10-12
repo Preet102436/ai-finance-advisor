@@ -597,7 +597,7 @@ export default function TransactionsPage() {
             <p className="status-banner status-success">
               Imported {importResult.imported} transaction(s)
               {importResult.auto_categorized > 0 && `, auto-categorized ${importResult.auto_categorized}`}
-              {importResult.skipped > 0 && `, skipped ${importResult.skipped} row(s) that could not be read`}
+              {importResult.skipped.length > 0 && `, skipped ${importResult.skipped.length} row(s) that could not be read`}
               .
             </p>
           )}

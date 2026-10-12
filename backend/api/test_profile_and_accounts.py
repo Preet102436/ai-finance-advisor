@@ -1,6 +1,11 @@
 """
-Integration test for GET/PUT /users/me/profile and GET/DELETE
-/bank/accounts - the Settings page's Profile and Connected Accounts tabs.
+Integration test for GET/PATCH /users/me and GET/DELETE
+/bank/accounts - the Profile page and Settings page's Connected Accounts tab.
+
+test_profile_update_and_read originally targeted a planned /users/me/profile
+endpoint with address/monthly_income fields; the app settled on /users/me
+with phone/date_of_birth/location instead (see schemas.UserProfileUpdate),
+so this test was updated to match what was actually built.
 
 The disconnect test specifically covers a real bug found while building
 this: disconnecting an account with a receipt-scanned transaction used to
@@ -34,21 +39,21 @@ def test_profile_update_and_read():
         login = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        empty_resp = client.get("/users/me/profile", headers=headers)
+        empty_resp = client.get("/users/me", headers=headers)
         assert empty_resp.status_code == 200
         assert empty_resp.json()["phone"] is None
 
-        update_resp = client.put(
-            "/users/me/profile",
+        update_resp = client.patch(
+            "/users/me",
             headers=headers,
-            json={"phone": "0400 000 000", "address": "1 Example St", "monthly_income": 5000.0},
+            json={"phone": "0400 000 000", "location": "1 Example St"},
         )
         assert update_resp.status_code == 200
         assert update_resp.json()["phone"] == "0400 000 000"
-        assert update_resp.json()["monthly_income"] == 5000.0
+        assert update_resp.json()["location"] == "1 Example St"
 
-        get_resp = client.get("/users/me/profile", headers=headers)
-        assert get_resp.json()["address"] == "1 Example St"
+        get_resp = client.get("/users/me", headers=headers)
+        assert get_resp.json()["location"] == "1 Example St"
     finally:
         db = SessionLocal()
         try:
@@ -68,7 +73,7 @@ def test_disconnect_account_with_receipt_transaction_does_not_fk_violate():
         login = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        link = client.post("/bank/link-account", headers=headers).json()
+        link = client.post("/bank/link-account", headers=headers, json={"consent": True}).json()
         cb = client.post(
             "/bank/link-account/callback",
             headers=headers,

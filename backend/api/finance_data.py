@@ -7,9 +7,10 @@ Used by /chat/messages and /savings/suggestions.
 
 from datetime import date, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from models import BankAccount, Budget, Category, Transaction
+from models import BankAccount, Budget, Category, Forecast, Transaction
 
 
 def load_user_transactions(
@@ -62,3 +63,37 @@ def load_user_budgets(db: Session, user_id: int):
         # category is its latest budget.
         budgets.setdefault(category_name, float(budget.recommended_amount))
     return budgets
+
+
+def load_latest_forecast(db: Session, user_id: int):
+    """The user's most recently generated balance forecast (see POST
+    /forecasts), or None if they haven't generated one yet.
+
+    A single /forecasts call inserts one row per forecast day, all in the
+    same commit - Postgres's NOW() (forecasts.created_at's default) returns
+    the same value for every row in one transaction, so that shared
+    created_at is what identifies "the latest forecast" as a batch, not an
+    explicit batch id column.
+    """
+    latest_created_at = (
+        db.query(func.max(Forecast.created_at)).filter(Forecast.user_id == user_id).scalar()
+    )
+    if latest_created_at is None:
+        return None
+
+    points = (
+        db.query(Forecast)
+        .filter(Forecast.user_id == user_id, Forecast.created_at == latest_created_at)
+        .order_by(Forecast.forecast_date)
+        .all()
+    )
+    if not points:
+        return None
+
+    last_point = points[-1]
+    return {
+        "days_ahead": len(points),
+        "end_date": last_point.forecast_date.isoformat(),
+        "end_balance": float(last_point.predicted_balance),
+        "method": last_point.model_version,
+    }

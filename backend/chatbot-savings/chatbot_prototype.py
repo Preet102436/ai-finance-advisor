@@ -146,7 +146,7 @@ def generate_savings_suggestions(transactions, budgets=SAMPLE_BUDGETS):
     return [s["suggestion"] for s in generate_savings_suggestions_detailed(transactions, budgets)]
 
 
-def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS):
+def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS, forecast=None):
     context = build_context_block(retrieved)
     category_totals = category_totals_for(retrieved)
 
@@ -158,6 +158,16 @@ def build_prompt(question, retrieved, budgets=SAMPLE_BUDGETS):
 
     suggestion_lines = generate_savings_suggestions(retrieved, budgets)
 
+    # forecast is finance_data.load_latest_forecast()'s dict (or None if the
+    # user hasn't generated one yet) - without this, a question like "what's
+    # my balance forecast?" had nothing real to answer from.
+    forecast_block = "No balance forecast generated yet."
+    if forecast:
+        forecast_block = (
+            f"Over the next {forecast['days_ahead']} days ({forecast['method']} method), "
+            f"predicted balance of {forecast['end_balance']:.2f} by {forecast['end_date']}."
+        )
+
     prompt = f"""You are a helpful personal finance assistant. Answer the user's question
 using ONLY the transaction data provided below. Be specific and concise, and clearly
 frame any suggestion as a suggestion, not financial advice.
@@ -167,6 +177,9 @@ User's recent relevant transactions:
 
 Budget comparison:
 {chr(10).join(budget_lines) if budget_lines else "No matching budget data."}
+
+Balance forecast:
+{forecast_block}
 
 Savings suggestions:
 {chr(10).join(f"- {s}" for s in suggestion_lines) if suggestion_lines else "No categories currently over budget."}

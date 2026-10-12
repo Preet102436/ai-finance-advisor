@@ -1,6 +1,6 @@
 """
 Integration test for POST /transactions (manual entry), PUT
-/transactions/{id}/category (recategorise), GET /transactions/{id}, and the
+/transactions/{id} (recategorise), GET /transactions/{id}, and the
 `search` filter on GET /transactions.
 
 Run with:
@@ -34,7 +34,7 @@ def test_manual_entry_recategorise_and_search():
         login_resp = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-        link_resp = client.post("/bank/link-account", headers=headers)
+        link_resp = client.post("/bank/link-account", headers=headers, json={"consent": True})
         link_data = link_resp.json()
         callback_resp = client.post(
             "/bank/link-account/callback",
@@ -78,9 +78,11 @@ def test_manual_entry_recategorise_and_search():
         assert no_match_resp.status_code == 200
         assert no_match_resp.json() == []
 
-        # Recategorise it.
+        # Recategorise it (PUT /transactions/{id} - the same general-purpose
+        # update endpoint the Transactions page's edit form uses; category_name
+        # is one of its optional fields).
         recat_resp = client.put(
-            f"/transactions/{txn_id}/category",
+            f"/transactions/{txn_id}",
             headers=headers,
             json={"category_name": "entertainment"},
         )

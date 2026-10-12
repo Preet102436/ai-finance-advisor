@@ -4,7 +4,7 @@ categories used in the current user's transactions, for filter dropdowns.
 POST /transactions - add a manual transaction (source='manual'), for
 expenses/income the user types in by hand rather than syncing or scanning.
 POST /transactions/import - bulk-import transactions from a .csv or .xlsx
-file (source='import'), with best-effort auto-categorization by merchant/
+file (source='csv_import'), with best-effort auto-categorization by merchant/
 description keywords.
 
 GET/PUT/DELETE /transactions/{id} - fetch, edit (e.g. recategorise, fix an
@@ -19,6 +19,7 @@ import logging
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -241,7 +242,6 @@ def _rows_from_csv(text: str) -> list[dict]:
             "category": _cell(row, "category"),
         }
         for row in rows[1:]
-        if any((c or "").strip() for c in row)
     ]
 
 
@@ -284,7 +284,7 @@ def _rows_from_xlsx(file_bytes: bytes) -> list[dict]:
     return out
 
 
-@router.post("/import")
+@router.post("/import", status_code=status.HTTP_201_CREATED)
 async def import_transactions(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -294,8 +294,9 @@ async def import_transactions(
     file. Looks for date/amount columns (plus optional description/merchant/
     category) under a handful of common header names, auto-categorizes rows
     with no explicit category via merchant/description keyword matching, and
-    inserts everything as source='import'. Rows that fail to parse are
-    skipped and counted, never silently dropped without being reported."""
+    inserts everything as source='csv_import'. Rows that fail to parse (bad
+    date/amount, a zero amount, or missing required fields) are skipped and
+    reported with their row number and reason, never silently dropped."""
     filename = (file.filename or "").lower()
     content = await file.read()
 
@@ -314,9 +315,8 @@ async def import_transactions(
     account = _get_or_create_manual_account(db, current_user)
 
     imported = 0
-    skipped = 0
+    skipped: list[dict] = []
     auto_categorized = 0
-    errors: list[str] = []
 
     for i, row in enumerate(raw_rows, start=2):  # row 1 is the header
         try:
@@ -324,10 +324,10 @@ async def import_transactions(
                 raise ValueError("missing date or amount")
             txn_date = _parse_date_flexible(row["date_raw"])
             amount = _parse_amount(row["amount_raw"])
+            if amount == 0:
+                raise ValueError("amount cannot be zero")
         except (ValueError, TypeError) as exc:
-            skipped += 1
-            if len(errors) < 10:
-                errors.append(f"row {i}: {exc}")
+            skipped.append({"row": i, "reason": str(exc)})
             continue
 
         category_name = row.get("category")
@@ -344,7 +344,7 @@ async def import_transactions(
             description=row.get("description"),
             merchant=row.get("merchant"),
             txn_date=txn_date,
-            source="import",
+            source="csv_import",
         ))
         imported += 1
 
@@ -352,9 +352,9 @@ async def import_transactions(
 
     return {
         "imported": imported,
+        "total_rows": imported + len(skipped),
         "skipped": skipped,
         "auto_categorized": auto_categorized,
-        "errors": errors,
     }
 
 
@@ -363,6 +363,7 @@ def list_transactions(
     category_id: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
+    search: str | None = None,
     limit: int | None = Query(default=None, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -374,7 +375,8 @@ def list_transactions(
     paginates). Pass limit to get a paginated page instead: the response
     shape changes to {items, total, limit, offset} so the Transactions
     page can render "page X of Y" controls without ever loading someone's
-    entire multi-year transaction history into the browser at once."""
+    entire multi-year transaction history into the browser at once.
+    search matches merchant or description, case-insensitively."""
     query = (
         db.query(Transaction, Category.name)
         .join(BankAccount, Transaction.account_id == BankAccount.account_id)
@@ -387,6 +389,11 @@ def list_transactions(
         query = query.filter(Transaction.txn_date >= start_date)
     if end_date is not None:
         query = query.filter(Transaction.txn_date <= end_date)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            or_(Transaction.merchant.ilike(like), Transaction.description.ilike(like))
+        )
 
     total = query.count()
 

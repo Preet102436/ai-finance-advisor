@@ -33,7 +33,7 @@ def test_chat_prompt_includes_real_forecast_data():
         login = client.post("/auth/login", json={"email": email, "password": password})
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-        link = client.post("/bank/link-account", headers=headers).json()
+        link = client.post("/bank/link-account", headers=headers, json={"consent": True}).json()
         client.post(
             "/bank/link-account/callback",
             headers=headers,
