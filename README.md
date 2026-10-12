@@ -8,9 +8,8 @@ cash-flow forecasting, and anomaly detection.
 This is the COIT20273 capstone project (Term 2 2026).
 
 > **Want to try the running app with minimal setup?** See
-> [QUICKSTART.md](./QUICKSTART.md) - one Docker command starts the database,
-> backend, and frontend together, no local Python/Node/Postgres install
-> needed. Manual setup instructions (if you'd rather run it natively) are
+> [HOW-TO-RUN.txt](./HOW-TO-RUN.txt) - on Windows, run `INSTALL.bat` once, then
+> double-click `START.bat` each time. Manual setup instructions (any OS) are
 > below.
 
 ## Team
@@ -36,16 +35,16 @@ phone width (a hamburger-triggered slide-in sidebar below ~860px).
 | Backend | Python 3.11+, FastAPI, SQLAlchemy, JWT auth |
 | Database | PostgreSQL 16 |
 | AI / ML | RAG chatbot (optional OpenAI, rule-based fallback), forecasting (Prophet if installed, moving-average fallback), Tesseract OCR |
-| Tooling | Docker Compose, pytest |
+| Tooling | pytest |
 
 ## Features
 
 - **Accounts** - register/login (JWT), profile, settings, account deletion
   (cascades every linked table).
-- **Bank linking** - mocked Open Banking OAuth2 flow (consent + sandbox
-  login), sync transactions, unlink/relink at any time. Manual transaction
-  entry and CSV/Excel import both work with or without a linked bank
-  account.
+- **Bank linking** - mocked Open Banking OAuth2-style flow (choose a bank,
+  click through consent, pick an account) - no login form, nothing to type.
+  Sync transactions, unlink/relink at any time. Manual transaction entry and
+  CSV/Excel import both work with or without a linked bank account.
 - **Transactions** - full CRUD (add, edit, delete, categorise) on every
   transaction, with filtering and CSV/Excel import.
 - **Receipts** - photo upload with OCR (Tesseract) + category/total/merchant
@@ -57,9 +56,8 @@ phone width (a hamburger-triggered slide-in sidebar below ~860px).
   user's real transactions/budgets; falls back to a rule-based reasoning
   engine with no API key required (works out of the box).
 - **AI Insights** - pick a date range and get an AI-generated financial
-  summary, category breakdown, anomaly/
-  overspend flags with linked evidence transactions, and savings
-  suggestions - exportable as CSV or PDF.
+  summary, category breakdown, anomaly/overspend flags with linked evidence
+  transactions, and savings suggestions - exportable as CSV or PDF.
 - **Forecasting** - predictive balance forecast (Prophet when available,
   moving-average fallback) with a confidence band.
 - **Anomaly detection** - flags unusual transactions automatically.
@@ -94,9 +92,9 @@ ai-finance-advisor/
 │   ├── expense-ocr-design.md
 │   ├── chatbot-savings-design.md
 │   └── meeting-minutes.md
-├── docker-compose.yml             # One-command local run (see QUICKSTART.md)
 ├── INSTALL.bat / START.bat        # One-click Windows install and start
 ├── setup-db.ps1                   # Windows database setup (used by INSTALL.bat)
+├── TUNNEL.bat                     # Optional: share the running app over the internet
 └── HOW-TO-RUN.txt                 # Step-by-step Windows guide
 ```
 
@@ -104,15 +102,13 @@ ai-finance-advisor/
 
 ### Easiest on Windows
 
-See [HOW-TO-RUN.txt](./HOW-TO-RUN.txt): run `INSTALL.bat` once (as
-administrator), then double-click `START.bat` each time.
+See [HOW-TO-RUN.txt](./HOW-TO-RUN.txt): run `INSTALL.bat` once (it installs
+the Python/Node packages and sets up the database), then double-click
+`START.bat` each time - it opens the backend, the frontend, and your browser
+at `http://localhost:5173`. `TUNNEL.bat` optionally shares that running app
+over the internet (e.g. to try it on a phone).
 
-### Option A: Docker (recommended, no local installs needed)
-
-See [QUICKSTART.md](./QUICKSTART.md) - `docker compose up --build`, then open
-http://localhost:5173.
-
-### Option B: Run natively
+### Manual setup (Windows, Mac, or Linux)
 
 Prerequisites: PostgreSQL 16, Python 3.11+, Node.js 18+.
 
@@ -163,11 +159,11 @@ running Postgres database (same `.env` as above) - it isn't mocked.
 
 ## Notes / known limitations
 
-- The bank-link flow is a mocked Open Banking sandbox (demo credentials
-  `demo_user` / `demo1234`), not a real provider - swapping in a real one is
-  future work, not part of this assessment's scope.
+- The bank-link flow is a mocked Open Banking sandbox - click "Link a bank
+  account", choose the sandbox demo bank, and click through the consent
+  screens. There's no login form and nothing to type; swapping in a real
+  provider is future work, not part of this assessment's scope.
 - `OPENAI_API_KEY` is optional everywhere it's used; omitting it degrades
   gracefully to rule-based logic rather than failing.
-- This setup (and the Docker one) is for local use/demonstration - the JWT
-  secret and DB password are development placeholders, not production
-  secrets.
+- This setup is for local use/demonstration - the JWT secret and DB password
+  are development placeholders, not production secrets.
