@@ -87,6 +87,8 @@ ai-finance-advisor/
 
 ## Running it
 
+IMPORTANT NOTE: If you have already finance_advisor, so you may get error while first time running so, please that delete finance_advisor DB then reinstall project using by INSTALL.bat file.
+
 ### Easiest on Windows
 
 **New to this? Start here - one-time setup, about 10 minutes:**
