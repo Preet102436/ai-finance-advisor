@@ -95,7 +95,7 @@ ai-finance-advisor/
 ├── INSTALL.bat / START.bat        # One-click Windows install and start
 ├── setup-db.ps1                   # Windows database setup (used by INSTALL.bat)
 ├── TUNNEL.bat                     # Optional: share the running app over the internet
-└── HOW-TO-RUN.txt                 # Step-by-step Windows guide
+└── README.txt                 # Step-by-step Windows guide
 ```
 
 ## Running it
@@ -109,6 +109,8 @@ at `http://localhost:5173`. `TUNNEL.bat` optionally shares that running app
 over the internet (e.g. to try it on a phone).
 
 ### Manual setup (Windows, Mac, or Linux)
+
+## IMPORTANT NOTE: If you have already finance_advisor, so you may get error while first time running so, please that delete finance_advisor  DB then reinstall project using by INSTALL.bat file.
 
 Prerequisites: PostgreSQL 16, Python 3.11+, Node.js 18+.
 
