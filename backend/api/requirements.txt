@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-sqlalchemy>=2.0
+sqlalchemy
 psycopg2-binary
 python-dotenv
 bcrypt
@@ -13,3 +13,5 @@ python-multipart
 pytesseract
 pillow
 openai
+openpyxl
+reportlab

@@ -7,6 +7,7 @@ Used by /chat/messages and /savings/suggestions.
 
 from datetime import date, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from models import BankAccount, Budget, Category, Forecast, Transaction
@@ -37,6 +38,7 @@ def load_user_transactions(
 
     return [
         {
+            "id": txn.transaction_id,
             "date": txn.txn_date.isoformat(),
             "category": category_name or "uncategorised",
             "amount": float(txn.amount),
@@ -64,37 +66,34 @@ def load_user_budgets(db: Session, user_id: int):
 
 
 def load_latest_forecast(db: Session, user_id: int):
-    """The most recently generated forecast batch (all rows share the same
-    created_at from one POST /forecasts call), summarised as the chatbot
-    prompt needs it. None if the user hasn't generated a forecast yet (e.g.
-    hasn't opened the Dashboard this session) - /forecasts isn't run
-    automatically on every chat message, only on Dashboard load, to avoid a
-    chat question silently recomputing and overwriting stored forecast data.
+    """The user's most recently generated balance forecast (see POST
+    /forecasts), or None if they haven't generated one yet.
+
+    A single /forecasts call inserts one row per forecast day, all in the
+    same commit - Postgres's NOW() (forecasts.created_at's default) returns
+    the same value for every row in one transaction, so that shared
+    created_at is what identifies "the latest forecast" as a batch, not an
+    explicit batch id column.
     """
-    latest_run = (
-        db.query(Forecast.created_at)
-        .filter(Forecast.user_id == user_id)
-        .order_by(Forecast.created_at.desc())
-        .first()
+    latest_created_at = (
+        db.query(func.max(Forecast.created_at)).filter(Forecast.user_id == user_id).scalar()
     )
-    if latest_run is None:
+    if latest_created_at is None:
         return None
 
     points = (
         db.query(Forecast)
-        .filter(Forecast.user_id == user_id, Forecast.created_at == latest_run[0])
+        .filter(Forecast.user_id == user_id, Forecast.created_at == latest_created_at)
         .order_by(Forecast.forecast_date)
         .all()
     )
     if not points:
         return None
 
-    first, last = points[0], points[-1]
+    last_point = points[-1]
     return {
-        "method": first.model_version or "unknown",
         "days_ahead": len(points),
-        "start_date": first.forecast_date.isoformat(),
-        "start_balance": float(first.predicted_balance),
-        "end_date": last.forecast_date.isoformat(),
-        "end_balance": float(last.predicted_balance),
+        "end_date": last_point.forecast_date.isoformat(),
+        "end_balance": float(last_point.predicted_balance),
+        "method": last_point.model_version,
     }

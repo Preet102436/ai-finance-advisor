@@ -1,9 +1,15 @@
 """/budgets router.
 
-GET  /budgets              list the current user's budgets for a period (default: this month)
-POST /budgets               create/override a budget for a category, current month (user-set)
-PUT  /budgets/{id}          edit a budget's amount
-POST /budgets/recommend     AI-recommended budgets from trailing spend (see below)
+GET /budgets - list the current user's budgets for the current month
+(both AI-recommended and user-created). This is what the Dashboard
+renders - POST /budgets/recommend only upserts AI-recommended budgets and
+returns just those, so relying on its return value alone would silently
+drop any budget the user created or edited themselves.
+POST /budgets/recommend - auto-generate budgets from trailing spend.
+POST /budgets - create a user-defined budget in a category, with an
+amount the user picks themselves (generated_by='user').
+PATCH /budgets/{budget_id} - increase/decrease an existing budget's amount.
+DELETE /budgets/{budget_id} - remove a budget.
 """
 
 import logging
@@ -11,7 +17,6 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import Date, func
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -24,8 +29,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
 
-def _get_or_create_category(db: Session, name: str) -> Category:
-    category = db.query(Category).filter(Category.name == name).first()
+def _subtract_months(d: date, months: int) -> date:
+    year = d.year
+    month = d.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, 1)
+
+
+def _resolve_category(db: Session, name: str) -> Category:
+    """Looks up an existing category by (case-insensitive) name, creating
+    one if it doesn't exist yet - same pattern used by /bank/sync and
+    POST /transactions for on-the-fly category creation."""
+    category = db.query(Category).filter(Category.name.ilike(name)).first()
     if category is None:
         category = Category(name=name)
         db.add(category)
@@ -33,45 +50,36 @@ def _get_or_create_category(db: Session, name: str) -> Category:
     return category
 
 
-def _get_owned_budget(db: Session, current_user: User, budget_id: int) -> Budget:
-    budget = (
-        db.query(Budget)
-        .filter(Budget.budget_id == budget_id, Budget.user_id == current_user.user_id)
-        .first()
+def _budget_out(db: Session, budget: Budget) -> BudgetOut:
+    category = db.query(Category).filter(Category.category_id == budget.category_id).first()
+    return BudgetOut(
+        budget_id=budget.budget_id,
+        category_id=budget.category_id,
+        category_name=category.name if category else "unknown",
+        period_month=budget.period_month,
+        recommended_amount=float(budget.recommended_amount),
+        months_considered=0,
+        generated_by=budget.generated_by,
     )
-    if budget is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget not found")
-    return budget
 
 
 @router.get("", response_model=list[BudgetOut])
 def list_budgets(
-    period_month: date | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Defaults to the current calendar month if period_month isn't given."""
-    target_month = (period_month or date.today()).replace(day=1)
-
+    """Every budget the user has for the current calendar month - AI-
+    recommended ones (generated_by='ai_engine') and ones they created or
+    edited themselves (generated_by='user') alike. A brand-new category
+    budget shows up here immediately, even before it has any trailing
+    spend history for the recommend engine to consider."""
+    period_month = date.today().replace(day=1)
     rows = (
-        db.query(Budget, Category.name)
-        .join(Category, Budget.category_id == Category.category_id)
-        .filter(Budget.user_id == current_user.user_id, Budget.period_month == target_month)
-        .order_by(Category.name)
+        db.query(Budget)
+        .filter(Budget.user_id == current_user.user_id, Budget.period_month == period_month)
         .all()
     )
-    return [
-        BudgetOut(
-            budget_id=b.budget_id,
-            category_id=b.category_id,
-            category_name=category_name,
-            period_month=b.period_month,
-            recommended_amount=float(b.recommended_amount),
-            months_considered=1,
-            generated_by=b.generated_by,
-        )
-        for b, category_name in rows
-    ]
+    return [_budget_out(db, b) for b in rows]
 
 
 @router.post("", response_model=BudgetOut, status_code=status.HTTP_201_CREATED)
@@ -80,79 +88,86 @@ def create_budget(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """User-set budget for a category, for the current calendar month. If one
-    already exists for that category/month it's overwritten (same upsert
-    behaviour as /budgets/recommend), so this also works as "edit by name"."""
+    """Create (or override, if one already exists for this category this
+    month) a budget the user sets themselves for a category - including a
+    brand-new category that doesn't have any transactions yet."""
     period_month = date.today().replace(day=1)
-    category = _get_or_create_category(db, payload.category_name)
+    category = _resolve_category(db, payload.category_name.strip())
 
-    # Atomic upsert (not check-then-insert): two near-simultaneous requests
-    # for the same category/month - e.g. React StrictMode double-invoking an
-    # effect in dev - would otherwise both see "no existing row" and both
-    # insert, violating the budgets(user_id, category_id, period_month)
-    # unique constraint, or worse (before that constraint existed) silently
-    # creating duplicate rows. ON CONFLICT makes the DB resolve the race.
-    stmt = (
-        pg_insert(Budget.__table__)
-        .values(
-            user_id=current_user.user_id,
-            category_id=category.category_id,
-            period_month=period_month,
-            recommended_amount=payload.amount,
-            generated_by="user",
+    try:
+        budget = (
+            db.query(Budget)
+            .filter(
+                Budget.user_id == current_user.user_id,
+                Budget.category_id == category.category_id,
+                Budget.period_month == period_month,
+            )
+            .first()
         )
-        .on_conflict_do_update(
-            index_elements=["user_id", "category_id", "period_month"],
-            set_={"recommended_amount": payload.amount, "generated_by": "user"},
+        if budget:
+            budget.recommended_amount = payload.amount
+            budget.generated_by = "user"
+        else:
+            budget = Budget(
+                user_id=current_user.user_id,
+                category_id=category.category_id,
+                period_month=period_month,
+                recommended_amount=payload.amount,
+                generated_by="user",
+            )
+            db.add(budget)
+        db.commit()
+        db.refresh(budget)
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to create budget for user_id=%s", current_user.user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create this budget right now. Please try again.",
         )
-        .returning(Budget.budget_id)
-    )
-    budget_id = db.execute(stmt).scalar_one()
-    db.commit()
 
-    return BudgetOut(
-        budget_id=budget_id,
-        category_id=category.category_id,
-        category_name=category.name,
-        period_month=period_month,
-        recommended_amount=payload.amount,
-        months_considered=1,
-        generated_by="user",
-    )
+    return _budget_out(db, budget)
 
 
-@router.put("/{budget_id}", response_model=BudgetOut)
+@router.patch("/{budget_id}", response_model=BudgetOut)
 def update_budget(
     budget_id: int,
     payload: BudgetUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    budget = _get_owned_budget(db, current_user, budget_id)
+    """Increase or decrease a budget's amount - set it directly to the new
+    total the user wants for that category."""
+    budget = (
+        db.query(Budget)
+        .filter(Budget.budget_id == budget_id, Budget.user_id == current_user.user_id)
+        .first()
+    )
+    if budget is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget not found")
+
     budget.recommended_amount = payload.amount
-    budget.generated_by = "user"
     db.commit()
     db.refresh(budget)
+    return _budget_out(db, budget)
 
-    category = db.get(Category, budget.category_id)
-    return BudgetOut(
-        budget_id=budget.budget_id,
-        category_id=budget.category_id,
-        category_name=category.name if category else "unknown",
-        period_month=budget.period_month,
-        recommended_amount=float(budget.recommended_amount),
-        months_considered=1,
-        generated_by=budget.generated_by,
+
+@router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_budget(
+    budget_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    budget = (
+        db.query(Budget)
+        .filter(Budget.budget_id == budget_id, Budget.user_id == current_user.user_id)
+        .first()
     )
-
-
-def _subtract_months(d: date, months: int) -> date:
-    year = d.year
-    month = d.month - months
-    while month <= 0:
-        month += 12
-        year -= 1
-    return date(year, month, 1)
+    if budget is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget not found")
+    db.delete(budget)
+    db.commit()
+    return None
 
 
 @router.post("/recommend", response_model=list[BudgetOut])
@@ -167,8 +182,17 @@ def recommend_budgets(
     Aggregates the last `window_months` complete calendar months of expense
     transactions (amount < 0) per category, takes a recency-weighted average
     (most recent month weighted highest), applies a `savings_target` reduction
-    (default 5%), and upserts the result into `budgets` for the current
-    calendar month (generated_by='ai_engine').
+    (default 5%), and creates a budget for the current calendar month
+    (generated_by='ai_engine') for any category that doesn't already have
+    one this month.
+
+    Deliberately never touches a budget that already exists for a
+    category this month - whether the user created it, edited one of
+    these AI amounts with PATCH, or deleted one outright. Once a row
+    exists (or has been removed), the user owns it from the Dashboard's
+    budget cards; re-running this (e.g. just by revisiting the Dashboard,
+    which calls this automatically the first time) must never silently
+    overwrite an edit or resurrect a delete.
     """
     today = date.today()
     period_month = today.replace(day=1)
@@ -211,61 +235,53 @@ def recommend_budgets(
             weighted_avg = weighted_sum / sum(weights)
             recommended_amount = round(weighted_avg * (1 - savings_target), 2)
 
-            # Atomic upsert, same reasoning as POST /budgets - a check-then-
-            # insert here raced under React StrictMode's double-invoked dev
-            # effect and created duplicate rows before the unique constraint
-            # (and this fix) existed. The `where` clause additionally makes
-            # sure a user's manual override (generated_by='user') is never
-            # silently clobbered by a later AI recalculation, since the
-            # Dashboard re-runs this on every page load.
-            stmt = (
-                pg_insert(Budget.__table__)
-                .values(
-                    user_id=current_user.user_id,
-                    category_id=category_id,
-                    period_month=period_month,
-                    recommended_amount=recommended_amount,
-                    generated_by="ai_engine",
+            budget = (
+                db.query(Budget)
+                .filter(
+                    Budget.user_id == current_user.user_id,
+                    Budget.category_id == category_id,
+                    Budget.period_month == period_month,
                 )
-                .on_conflict_do_update(
-                    index_elements=["user_id", "category_id", "period_month"],
-                    set_={"recommended_amount": recommended_amount},
-                    where=(Budget.__table__.c.generated_by != "user"),
-                )
-                .returning(Budget.budget_id, Budget.recommended_amount, Budget.generated_by)
+                .first()
             )
-            row = db.execute(stmt).first()
-            if row is None:
-                # The WHERE clause blocked the update (existing row is a
-                # user override) and the insert hit the same conflict, so
-                # RETURNING yielded nothing - fetch the existing row as-is
-                # instead of overwriting the user's own amount.
-                existing = (
-                    db.query(Budget)
-                    .filter(
-                        Budget.user_id == current_user.user_id,
-                        Budget.category_id == category_id,
-                        Budget.period_month == period_month,
+            if budget is not None:
+                # A budget already exists for this category this month -
+                # whether it's a prior AI recommendation (possibly since
+                # edited by hand) or one the user created from scratch.
+                # Report its current, real state and move on without
+                # touching it.
+                results.append(
+                    BudgetOut(
+                        budget_id=budget.budget_id,
+                        category_id=category_id,
+                        category_name=category_names.get(category_id, "unknown"),
+                        period_month=period_month,
+                        recommended_amount=float(budget.recommended_amount),
+                        months_considered=len(monthly),
+                        generated_by=budget.generated_by,
                     )
-                    .one()
                 )
-                budget_id, saved_amount, saved_generated_by = (
-                    existing.budget_id,
-                    existing.recommended_amount,
-                    existing.generated_by,
-                )
-            else:
-                budget_id, saved_amount, saved_generated_by = row
+                continue
+
+            budget = Budget(
+                user_id=current_user.user_id,
+                category_id=category_id,
+                period_month=period_month,
+                recommended_amount=recommended_amount,
+                generated_by="ai_engine",
+            )
+            db.add(budget)
+            db.flush()
 
             results.append(
                 BudgetOut(
-                    budget_id=budget_id,
+                    budget_id=budget.budget_id,
                     category_id=category_id,
                     category_name=category_names.get(category_id, "unknown"),
                     period_month=period_month,
-                    recommended_amount=float(saved_amount),
+                    recommended_amount=recommended_amount,
                     months_considered=len(monthly),
-                    generated_by=saved_generated_by,
+                    generated_by="ai_engine",
                 )
             )
 

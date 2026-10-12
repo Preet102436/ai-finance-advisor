@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register, login } from "../lib/auth";
+import LogoFull from "../components/LogoFull";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -30,6 +31,9 @@ export default function RegisterPage() {
   return (
     <div className="auth-page">
       <form className="auth-form" onSubmit={handleSubmit}>
+        <div className="auth-brand">
+          <LogoFull width={210} />
+        </div>
         <h1>Create an account</h1>
         {error && <p className="form-error">{error}</p>}
         <label>

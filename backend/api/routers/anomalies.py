@@ -5,6 +5,7 @@ real transactions and persists flagged rows into the anomalies table.
 """
 
 import logging
+from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -74,6 +75,14 @@ def detect_and_store_anomalies(
     if not flagged:
         return []
 
+    # Per-category "normal" amount (mean of every other transaction in the
+    # same category, excluding the flagged one itself) so the stored reason
+    # can say what's actually unusual about the amount, not just cite a bare
+    # z-score - this also powers the alerts bell's human-readable text.
+    amounts_by_category = defaultdict(list)
+    for r in rows:
+        amounts_by_category[r["category"]].append((r["transaction_id"], abs(r["amount"])))
+
     try:
         category_ids = {f["category"] for f in flagged}
         category_names = {
@@ -83,7 +92,15 @@ def detect_and_store_anomalies(
 
         results = []
         for f in flagged:
-            reason = f"amount is a {f['z_score']}-sigma outlier vs its category's history"
+            same_category = amounts_by_category.get(f["category"], [])
+            normal_amounts = [amt for tid, amt in same_category if tid != f["transaction_id"]]
+            normal_amount = (
+                sum(normal_amounts) / len(normal_amounts) if normal_amounts else abs(f["amount"])
+            )
+            reason = (
+                f"${abs(f['amount']):.2f} is a {f['z_score']}-sigma outlier vs the normal amount "
+                f"for this category (around ${normal_amount:.2f})"
+            )
 
             anomaly = db.query(Anomaly).filter(Anomaly.transaction_id == f["transaction_id"]).first()
             if anomaly:
@@ -122,3 +139,40 @@ def detect_and_store_anomalies(
         )
 
     return results
+
+
+@router.get("", response_model=list[AnomalyOut])
+def list_anomalies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Read-only - returns whatever POST /anomalies has already flagged and
+    stored for the current user, without re-running detection. Powers the
+    alerts bell and the dashboard's "flagged anomalies" card, neither of
+    which should trigger a fresh (and possibly slow) detection pass on every
+    page load.
+    """
+    rows = (
+        db.query(Anomaly, Transaction, Category.name)
+        .join(Transaction, Anomaly.transaction_id == Transaction.transaction_id)
+        .join(BankAccount, Transaction.account_id == BankAccount.account_id)
+        .outerjoin(Category, Transaction.category_id == Category.category_id)
+        .filter(BankAccount.user_id == current_user.user_id)
+        .order_by(Anomaly.detected_at.desc())
+        .all()
+    )
+
+    return [
+        AnomalyOut(
+            anomaly_id=anomaly.anomaly_id,
+            transaction_id=txn.transaction_id,
+            category_id=txn.category_id,
+            category_name=category_name or "unknown",
+            txn_date=txn.txn_date,
+            amount=float(txn.amount),
+            merchant=txn.merchant,
+            z_score=float(anomaly.anomaly_score),
+            reason=anomaly.reason,
+        )
+        for anomaly, txn, category_name in rows
+    ]

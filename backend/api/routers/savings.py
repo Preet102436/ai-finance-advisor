@@ -1,10 +1,6 @@
 """GET /savings/suggestions - specific, actionable savings suggestions from
 chatbot_prototype.py's generate_savings_suggestions_detailed(), grounded in
 the current user's real transactions and budgets for the current month.
-
-TODO (not implemented yet):
-- GET  /savings/goals          list current user's savings goals
-- POST /savings/goals          create a savings goal
 """
 
 from datetime import date

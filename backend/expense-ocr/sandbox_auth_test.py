@@ -13,10 +13,17 @@ Real usage will replace MockSandboxProvider with actual HTTP calls to the sandbo
 
 import base64
 import hashlib
-import random
 import secrets
 import time
 from datetime import date, timedelta
+
+
+
+# Mocked sandbox login screen credentials, shown in the frontend's link-account
+# UI so the demo flow can actually be completed - stands in for the user
+# entering real bank credentials on the provider's own login page.
+DEMO_USERNAME = "demo_user"
+DEMO_PASSWORD = "demo1234"
 
 
 class MockSandboxProvider:
@@ -25,6 +32,18 @@ class MockSandboxProvider:
     def __init__(self):
         self._issued_codes = {}
         self._issued_tokens = {}
+
+    def verify_credentials(self, username, password):
+        """Mocked sandbox login screen. Stands in for the credential-entry
+        step a user would complete on the real bank's own site during a
+        real Open Banking OAuth2 flow.
+
+        Surrounding whitespace is ignored and the username is matched
+        case-insensitively, so mobile auto-capitalisation ("Demo_user") or a
+        stray space from copy/paste doesn't reject the demo login."""
+        username = (username or "").strip().lower()
+        password = (password or "").strip()
+        return username == DEMO_USERNAME and password == DEMO_PASSWORD
 
     def authorize(self, client_id, redirect_uri, state):
         # In a real flow this would redirect the user to a consent screen.
@@ -62,94 +81,20 @@ def external_ref_for_storage(access_token):
     return hashlib.sha256(access_token.encode()).hexdigest()
 
 
-MERCHANTS_BY_CATEGORY = {
-    "groceries": ["Woolworths", "Coles", "Aldi", "IGA"],
-    "dining": ["Cafe Nero", "The Corner Bistro", "Pizzeria Napoli", "Golden Dragon Takeaway"],
-    "utilities": ["EnergyCo", "CityWater", "MetroGas", "NetLine Broadband"],
-    "subscriptions": ["Netflix", "Spotify", "Disney+"],
-    "transport": ["Uber", "Metro Transit", "CityCab", "Shell Petrol"],
-    "entertainment": ["Hoyts Cinema", "Ticketmaster", "Steam"],
-    "health": ["City Chemist", "Wellness Clinic", "Bright Smile Dental"],
-    "shopping": ["Kmart", "Target", "Amazon", "Big W"],
-}
-
-# (min, max) magnitude per category - amounts are stored as negative (spend).
-AMOUNT_RANGES = {
-    "groceries": (15, 120),
-    "dining": (8, 60),
-    "utilities": (40, 150),
-    "subscriptions": (5, 20),
-    "transport": (5, 45),
-    "entertainment": (10, 80),
-    "health": (10, 100),
-    "shopping": (10, 150),
-}
-
-DESCRIPTIONS_BY_CATEGORY = {
-    "groceries": "Groceries",
-    "dining": "Meal",
-    "utilities": "Utility bill",
-    "subscriptions": "Subscription",
-    "transport": "Fare",
-    "entertainment": "Entertainment",
-    "health": "Health/pharmacy",
-    "shopping": "Purchase",
-}
-
-INCOME_RANGE = (2200, 3800)
-
-
-def mock_transactions(seed=None, anchor_date=None):
-    """Canned-but-randomised transaction data standing in for a call to the
-    sandbox's /transactions endpoint, until real Open Banking credentials are
-    approved.
-
-    `seed` (pass the linked account's id) makes the randomness deterministic
-    per account: the same account always regenerates the exact same rows, so
-    /bank/sync's "skip already-synced" duplicate check keeps working across
-    re-syncs, while different accounts/users get different amounts,
-    categories, merchants and transaction counts.
-
-    `anchor_date` (pass the account's linked_at date) is what dates are
-    computed relative to. Anchoring to link time rather than "today" means
-    the same account produces the exact same dates no matter which day you
-    sync on - anchoring to "today" would make every day's sync compute a
-    different absolute date for what's otherwise an identical row, which the
-    duplicate check (an exact date match) wouldn't recognise as the same
-    transaction, so a fresh batch would get inserted on every new day.
-    Defaults to today, for standalone/CLI use with no linked account.
-    """
-    rng = random.Random(seed)
-    today = anchor_date or date.today()
-    categories = list(AMOUNT_RANGES.keys())
-
-    records = []
-    # A handful of transactions per category (not just one), so a single
-    # sync gives budgets/anomalies enough same-category history to be
-    # meaningful without the user having to upload receipts by hand.
-    for category in categories:
-        for _ in range(rng.randint(2, 5)):
-            low, high = AMOUNT_RANGES[category]
-            records.append({
-                "date": today - timedelta(days=rng.randint(1, 75)),
-                "amount": -round(rng.uniform(low, high), 2),
-                "description": DESCRIPTIONS_BY_CATEGORY[category],
-                "merchant": rng.choice(MERCHANTS_BY_CATEGORY[category]),
-                "category": category,
-            })
-
-    # One salary deposit per (roughly) month of history covered above.
-    for month in range(3):
-        records.append({
-            "date": today - timedelta(days=month * 30 + rng.randint(1, 5)),
-            "amount": round(rng.uniform(*INCOME_RANGE), 2),
-            "description": "Salary",
-            "merchant": "Employer Pty Ltd",
-            "category": "income",
-        })
-
-    records.sort(key=lambda r: r["date"], reverse=True)
-    return records
+def mock_transactions():
+    """Canned transaction data standing in for a call to the sandbox's
+    /transactions endpoint, until real Open Banking credentials are approved.
+    Dates are relative to today so synced data always looks recent."""
+    today = date.today()
+    return [
+        {"date": today - timedelta(days=9), "amount": -45.20, "description": "Weekly groceries", "merchant": "Woolworths", "category": "groceries"},
+        {"date": today - timedelta(days=8), "amount": -12.50, "description": "Coffee", "merchant": "Cafe Nero", "category": "dining"},
+        {"date": today - timedelta(days=7), "amount": -89.00, "description": "Electricity bill", "merchant": "EnergyCo", "category": "utilities"},
+        {"date": today - timedelta(days=5), "amount": -9.99, "description": "Streaming subscription", "merchant": "Netflix", "category": "subscriptions"},
+        {"date": today - timedelta(days=4), "amount": -52.10, "description": "Groceries", "merchant": "Coles", "category": "groceries"},
+        {"date": today - timedelta(days=2), "amount": 2500.00, "description": "Salary", "merchant": "Employer Pty Ltd", "category": "income"},
+        {"date": today - timedelta(days=1), "amount": -15.30, "description": "Lunch", "merchant": "Cafe Nero", "category": "dining"},
+    ]
 
 
 def run_flow_test():

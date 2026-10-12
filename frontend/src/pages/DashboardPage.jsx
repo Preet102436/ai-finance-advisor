@@ -14,30 +14,34 @@ import {
 } from "recharts";
 import { fetchTransactions } from "../lib/transactions";
 import {
-  recommendBudgets,
   fetchBudgets,
-  createOrUpdateBudget,
-  updateBudget,
+  recommendBudgets,
   generateForecast,
   detectAnomalies,
-  fetchInsights,
+  createBudget,
+  updateBudget,
+  deleteBudget,
 } from "../lib/dashboard";
 import SavingsSuggestionsPanel from "../components/SavingsSuggestionsPanel";
-import OnboardingChecklist from "../components/OnboardingChecklist";
+import FinancialSummaryCards from "../components/FinancialSummaryCards";
 
 // From the dataviz skill's reference palette (references/palette.md) -
-// sequential accent for magnitude, status colors reserved for severity only.
+// sequential blue for magnitude, status colors reserved for severity only.
+// These reference the app's CSS custom properties (defined in index.css)
+// rather than literal hex values, so the chart repaints correctly when the
+// person switches between light and dark mode - modern browsers resolve
+// var(...) in SVG fill/stroke attributes just like any other CSS color.
 const COLORS = {
-  seriesBlue: "#017a5c",
-  gridline: "#e1e0d9",
-  axisLine: "#c3c2b7",
-  textMuted: "#898781",
-  textSecondary: "#52514e",
-  textPrimary: "#0b0b0b",
-  surface: "#fcfcfb",
-  good: "#0ca30c",
-  warning: "#fab219",
-  critical: "#d03b3b",
+  seriesBlue: "#2a78d6",
+  gridline: "var(--color-border)",
+  axisLine: "var(--color-text-faint)",
+  textMuted: "var(--color-text-muted)",
+  textSecondary: "var(--color-text-muted)",
+  textPrimary: "var(--color-text)",
+  surface: "var(--color-card-bg)",
+  good: "var(--color-success-text)",
+  warning: "var(--color-warning-text)",
+  critical: "var(--color-error-text)",
 };
 
 function firstOfMonth() {
@@ -57,22 +61,57 @@ function severityFor(ratio) {
 
 const SEVERITY_LABEL = { good: "On track", warning: "Near limit", critical: "Over budget" };
 
-function BudgetMeter({ budget, actual, onSave }) {
-  const [editing, setEditing] = useState(false);
-  const [amount, setAmount] = useState(String(budget.recommended_amount));
-  const [saving, setSaving] = useState(false);
+function SettingsGearIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
+      <path
+        d="M12 3V5.2M12 18.8V21M21 12H18.8M5.2 12H3M18.0 6.0L16.5 7.5M7.5 16.5L6.0 18.0M18.0 18.0L16.5 16.5M7.5 7.5L6.0 6.0"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
-  const ratio = budget.recommended_amount > 0 ? actual / budget.recommended_amount : 0;
+function BudgetMeter({ budgetId, label, actual, budget, onChangeBudget, onDeleteBudget }) {
+  const ratio = budget > 0 ? actual / budget : 0;
   const severity = severityFor(ratio);
   const widthPct = Math.min(ratio, 1) * 100;
 
-  async function handleSave() {
-    const parsed = parseFloat(amount);
-    if (!parsed || parsed <= 0) return;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [amountInput, setAmountInput] = useState(String(budget));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function applyDelta(delta) {
     setSaving(true);
+    setError("");
     try {
-      await onSave(budget.budget_id, parsed);
+      await onChangeBudget(budgetId, Math.max(1, Math.round((budget + delta) * 100) / 100));
+    } catch (err) {
+      setError(err.message || "Failed to update budget");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyCustomAmount(e) {
+    e.preventDefault();
+    const amt = parseFloat(amountInput);
+    if (Number.isNaN(amt) || amt <= 0) {
+      setError("Enter an amount greater than 0.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onChangeBudget(budgetId, amt);
       setEditing(false);
+    } catch (err) {
+      setError(err.message || "Failed to update budget");
     } finally {
       setSaving(false);
     }
@@ -81,132 +120,82 @@ function BudgetMeter({ budget, actual, onSave }) {
   return (
     <div className="budget-card">
       <div className="budget-card-header">
-        <span className="budget-card-category">{budget.category_name}</span>
-        <span className={`budget-card-status budget-card-status-${severity}`}>
-          {SEVERITY_LABEL[severity]}
-        </span>
+        <span className="budget-card-category">{label}</span>
+        <div className="budget-card-header-right">
+          <span className={`budget-card-status budget-card-status-${severity}`}>
+            {SEVERITY_LABEL[severity]}
+          </span>
+          <div className="card-menu-wrap">
+            <button
+              type="button"
+              className="card-menu-trigger"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Budget settings"
+              title="Increase, decrease or delete this budget"
+            >
+              <SettingsGearIcon />
+            </button>
+            {menuOpen && (
+              <div className="card-menu">
+                <button type="button" disabled={saving} onClick={() => { setMenuOpen(false); applyDelta(10); }}>
+                  Increase by $10
+                </button>
+                <button type="button" disabled={saving} onClick={() => { setMenuOpen(false); applyDelta(-10); }}>
+                  Decrease by $10
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setAmountInput(String(budget));
+                    setEditing(true);
+                  }}
+                >
+                  Set custom amount
+                </button>
+                <button
+                  type="button"
+                  className="card-menu-danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDeleteBudget(budgetId);
+                  }}
+                >
+                  Delete budget
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
       <div className="meter-track">
         <div className="meter-fill" style={{ width: `${widthPct}%`, background: COLORS[severity] }} />
       </div>
       <div className="budget-card-amounts">
         <span>${actual.toFixed(2)} spent</span>
-        <span className="budget-card-limit">
-          of{" "}
-          {editing ? (
+        <span className="budget-card-limit">of ${budget.toFixed(2)} budget</span>
+      </div>
+      {editing && (
+        <form className="card-inline-form" onSubmit={applyCustomAmount}>
+          <div className="card-inline-form-row">
             <input
               type="number"
               step="0.01"
               min="0.01"
-              className="budget-edit-input"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              autoFocus
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
             />
-          ) : (
-            `$${budget.recommended_amount.toFixed(2)}`
-          )}{" "}
-          budget
-        </span>
-      </div>
-      {editing ? (
-        <div className="budget-edit-actions">
-          <button className="btn-link" onClick={() => setEditing(false)} disabled={saving}>
-            Cancel
-          </button>
-          <button className="btn-link" onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      ) : (
-        <button className="btn-link budget-edit-trigger" onClick={() => setEditing(true)}>
-          Edit budget
-        </button>
+            <button type="submit" className="btn btn-small" disabled={saving}>
+              Save
+            </button>
+            <button type="button" className="btn btn-secondary btn-small" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
-    </div>
-  );
-}
-
-function AddBudgetForm({ onAdd, onCancel }) {
-  const [category, setCategory] = useState("");
-  const [amount, setAmount] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    const parsed = parseFloat(amount);
-    if (!category.trim() || !parsed || parsed <= 0) return;
-    setSaving(true);
-    try {
-      await onAdd(category.trim(), parsed);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form className="budget-card add-budget-card" onSubmit={handleSubmit}>
-      <input
-        type="text"
-        placeholder="Category (e.g. dining)"
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        autoFocus
-      />
-      <input
-        type="number"
-        step="0.01"
-        min="0.01"
-        placeholder="Monthly budget ($)"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-      />
-      <div className="budget-edit-actions">
-        <button type="button" className="btn-link" onClick={onCancel} disabled={saving}>
-          Cancel
-        </button>
-        <button type="submit" className="btn-link" disabled={saving}>
-          {saving ? "Saving..." : "Add"}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-function SummaryCard({ label, value, tone, icon }) {
-  return (
-    <div className={"summary-card" + (tone ? ` summary-card-${tone}` : "")}>
-      <span className="summary-card-icon" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="summary-card-label">{label}</span>
-      <span className="summary-card-value">{value}</span>
-    </div>
-  );
-}
-
-function InsightsPanel({ insights, loading, error }) {
-  return (
-    <section className="dashboard-section">
-      <h2 className="section-title">AI insights</h2>
-      {loading && <p>Analysing your spending...</p>}
       {error && <p className="status-banner status-error">{error}</p>}
-      {!loading && !error && (
-        insights.length === 0 ? (
-          <p className="empty-state">
-            Not enough history yet for insights - sync more transactions or wait a few days.
-          </p>
-        ) : (
-          <ul className="insight-list">
-            {insights.map((insight, i) => (
-              <li key={i} className={`insight-item insight-${insight.severity}`}>
-                {insight.message}
-              </li>
-            ))}
-          </ul>
-        )
-      )}
-    </section>
+    </div>
   );
 }
 
@@ -214,13 +203,15 @@ export default function DashboardPage() {
   const [budgets, setBudgets] = useState([]);
   const [budgetsLoading, setBudgetsLoading] = useState(true);
   const [budgetsError, setBudgetsError] = useState("");
-  const [showAddBudget, setShowAddBudget] = useState(false);
 
-  const [monthTxns, setMonthTxns] = useState([]);
+  const [showNewBudgetForm, setShowNewBudgetForm] = useState(false);
+  const [newBudget, setNewBudget] = useState({ categoryName: "", amount: "" });
+  const [creatingBudget, setCreatingBudget] = useState(false);
+  const [newBudgetError, setNewBudgetError] = useState("");
+
+  const [actualByCategory, setActualByCategory] = useState({});
   const [spendLoading, setSpendLoading] = useState(true);
   const [spendError, setSpendError] = useState("");
-
-  const [allTxns, setAllTxns] = useState([]);
 
   const [forecast, setForecast] = useState(null);
   const [forecastLoading, setForecastLoading] = useState(true);
@@ -230,31 +221,33 @@ export default function DashboardPage() {
   const [anomaliesLoading, setAnomaliesLoading] = useState(true);
   const [anomaliesError, setAnomaliesError] = useState("");
 
-  const [insights, setInsights] = useState([]);
-  const [insightsLoading, setInsightsLoading] = useState(true);
-  const [insightsError, setInsightsError] = useState("");
-
-  function reloadBudgets() {
-    setBudgetsLoading(true);
-    return fetchBudgets()
+  useEffect(() => {
+    // Load whatever budgets already exist for this month first - this is
+    // the source of truth and reflects every edit/delete exactly as the
+    // user left it. Only fall back to auto-recommending from trailing
+    // spend when there's nothing at all yet, so simply revisiting the
+    // Dashboard never overwrites an edited amount or brings back a
+    // budget the user deleted.
+    fetchBudgets()
+      .then((existing) =>
+        existing.length > 0 ? existing : recommendBudgets().catch(() => []).then(fetchBudgets)
+      )
       .then(setBudgets)
       .catch((err) => setBudgetsError(err.message || "Failed to load budgets"))
       .finally(() => setBudgetsLoading(false));
-  }
-
-  useEffect(() => {
-    recommendBudgets()
-      .catch(() => {})
-      .finally(reloadBudgets);
 
     fetchTransactions({ startDate: firstOfMonth(), endDate: todayStr() })
-      .then(setMonthTxns)
+      .then((txns) => {
+        const totals = {};
+        for (const t of txns) {
+          if (t.amount >= 0) continue;
+          const key = t.category_name || "uncategorised";
+          totals[key] = (totals[key] || 0) + Math.abs(t.amount);
+        }
+        setActualByCategory(totals);
+      })
       .catch((err) => setSpendError(err.message || "Failed to load spending"))
       .finally(() => setSpendLoading(false));
-
-    fetchTransactions()
-      .then(setAllTxns)
-      .catch(() => {});
 
     generateForecast({ daysAhead: 14 })
       .then(setForecast)
@@ -265,39 +258,48 @@ export default function DashboardPage() {
       .then(setAnomalies)
       .catch((err) => setAnomaliesError(err.message || "Failed to load anomalies"))
       .finally(() => setAnomaliesLoading(false));
-
-    fetchInsights()
-      .then(setInsights)
-      .catch((err) => setInsightsError(err.message || "Failed to load insights"))
-      .finally(() => setInsightsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleBudgetSave(budgetId, amount) {
-    await updateBudget(budgetId, amount);
-    await reloadBudgets();
+  async function handleChangeBudget(budgetId, amount) {
+    const updated = await updateBudget(budgetId, amount);
+    setBudgets((prev) => prev.map((b) => (b.budget_id === budgetId ? updated : b)));
   }
 
-  async function handleBudgetAdd(categoryName, amount) {
-    await createOrUpdateBudget({ categoryName, amount });
-    setShowAddBudget(false);
-    await reloadBudgets();
+  async function handleDeleteBudget(budgetId) {
+    const ok = window.confirm("Delete this budget? You can always create a new one for this category later.");
+    if (!ok) return;
+    try {
+      await deleteBudget(budgetId);
+      setBudgets((prev) => prev.filter((b) => b.budget_id !== budgetId));
+    } catch (err) {
+      setBudgetsError(err.message || "Failed to delete budget");
+    }
   }
 
-  const actualByCategory = {};
-  for (const t of monthTxns) {
-    if (t.amount >= 0) continue;
-    const key = t.category_name || "uncategorised";
-    actualByCategory[key] = (actualByCategory[key] || 0) + Math.abs(t.amount);
+  async function handleCreateBudget(e) {
+    e.preventDefault();
+    const amount = parseFloat(newBudget.amount);
+    if (!newBudget.categoryName.trim()) {
+      setNewBudgetError("Enter a category name.");
+      return;
+    }
+    if (Number.isNaN(amount) || amount <= 0) {
+      setNewBudgetError("Enter an amount greater than 0.");
+      return;
+    }
+    setCreatingBudget(true);
+    setNewBudgetError("");
+    try {
+      const created = await createBudget({ categoryName: newBudget.categoryName.trim(), amount });
+      setBudgets((prev) => [...prev.filter((b) => b.budget_id !== created.budget_id), created]);
+      setNewBudget({ categoryName: "", amount: "" });
+      setShowNewBudgetForm(false);
+    } catch (err) {
+      setNewBudgetError(err.message || "Failed to create budget");
+    } finally {
+      setCreatingBudget(false);
+    }
   }
-
-  const monthIncome = monthTxns.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const monthExpenses = monthTxns.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
-  const monthSavings = monthIncome - monthExpenses;
-  const balance = allTxns.reduce((s, t) => s + t.amount, 0);
-  const totalBudget = budgets.reduce((s, b) => s + b.recommended_amount, 0);
-  const totalBudgetSpent = budgets.reduce((s, b) => s + (actualByCategory[b.category_name] || 0), 0);
-  const budgetUsedPct = totalBudget > 0 ? Math.min((totalBudgetSpent / totalBudget) * 100, 999) : null;
 
   const forecastData = forecast
     ? forecast.forecast.map((p) => ({
@@ -319,75 +321,98 @@ export default function DashboardPage() {
         <h1>Dashboard</h1>
       </div>
 
-      {!spendLoading && allTxns.length === 0 && (
-        <OnboardingChecklist hasTransactions={allTxns.length > 0} hasBudgets={budgets.length > 0} />
-      )}
-
       <section className="dashboard-section">
-        <div className="summary-cards-row">
-          <SummaryCard icon="💰" label="Balance" value={`$${balance.toFixed(2)}`} />
-          <SummaryCard icon="📈" label="Income (month)" value={`$${monthIncome.toFixed(2)}`} tone="good" />
-          <SummaryCard icon="📉" label="Expenses (month)" value={`$${monthExpenses.toFixed(2)}`} tone="critical" />
-          <SummaryCard
-            icon="🏦"
-            label="Savings (month)"
-            value={`${monthSavings < 0 ? "-" : ""}$${Math.abs(monthSavings).toFixed(2)}`}
-            tone={monthSavings >= 0 ? "good" : "critical"}
-          />
-          <SummaryCard
-            icon="📊"
-            label="Budget used"
-            value={budgetUsedPct == null ? "-" : `${budgetUsedPct.toFixed(0)}%`}
-            tone={budgetUsedPct != null && budgetUsedPct >= 100 ? "critical" : budgetUsedPct != null && budgetUsedPct >= 80 ? "warning" : undefined}
-          />
-        </div>
+        <FinancialSummaryCards />
       </section>
-
-      <InsightsPanel insights={insights} loading={insightsLoading} error={insightsError} />
 
       <section className="dashboard-section">
         <div className="section-title-row">
           <h2 className="section-title">Budget vs actual this month</h2>
-          {!showAddBudget && (
-            <button className="btn btn-secondary btn-sm" onClick={() => setShowAddBudget(true)}>
-              + Add budget
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn btn-secondary btn-small"
+            onClick={() => setShowNewBudgetForm((v) => !v)}
+          >
+            {showNewBudgetForm ? "Cancel" : "+ New budget"}
+          </button>
         </div>
-        {budgetsLoading && <p>Generating budgets...</p>}
+        {showNewBudgetForm && (
+          <form className="add-transaction-card new-budget-card" onSubmit={handleCreateBudget}>
+            <div className="form-row">
+              <label>
+                Category
+                <input
+                  type="text"
+                  value={newBudget.categoryName}
+                  onChange={(e) => setNewBudget({ ...newBudget, categoryName: e.target.value })}
+                  placeholder="e.g. entertainment"
+                  required
+                />
+              </label>
+              <label>
+                Monthly budget amount
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  value={newBudget.amount}
+                  onChange={(e) => setNewBudget({ ...newBudget, amount: e.target.value })}
+                  placeholder="200.00"
+                  required
+                />
+              </label>
+            </div>
+            <span className="field-hint">
+              Works for a brand-new category too - it'll show up here with $0 spent until you
+              have transactions in it.
+            </span>
+            {newBudgetError && <p className="status-banner status-error">{newBudgetError}</p>}
+            <button type="submit" className="btn" disabled={creatingBudget}>
+              {creatingBudget ? "Creating..." : "Create budget"}
+            </button>
+          </form>
+        )}
+        {budgetsLoading && <p>Loading budgets...</p>}
         {budgetsError && <p className="status-banner status-error">{budgetsError}</p>}
         {!budgetsLoading && !budgetsError && (
-          budgets.length === 0 && !showAddBudget ? (
+          budgets.length === 0 ? (
             <p className="empty-state">
-              No budgets yet. Sync a few months of transactions for AI recommendations, or add one
-              manually above.
+              No budget recommendations yet. Sync a few months of transactions on the Transactions
+              page, then check back here, or create a budget of your own above.
             </p>
           ) : (
             <div className="cards-grid">
               {budgets.map((b) => (
                 <BudgetMeter
                   key={b.budget_id}
-                  budget={b}
+                  budgetId={b.budget_id}
+                  label={b.category_name}
                   actual={actualByCategory[b.category_name] || 0}
-                  onSave={handleBudgetSave}
+                  budget={b.recommended_amount}
+                  onChangeBudget={handleChangeBudget}
+                  onDeleteBudget={handleDeleteBudget}
                 />
               ))}
-              {showAddBudget && (
-                <AddBudgetForm onAdd={handleBudgetAdd} onCancel={() => setShowAddBudget(false)} />
-              )}
             </div>
           )
         )}
       </section>
 
       <section className="dashboard-section">
-        <SavingsSuggestionsPanel />
+        <SavingsSuggestionsPanel title="Savings suggestions" />
       </section>
 
       <section className="dashboard-section">
         <h2 className="section-title">Balance forecast</h2>
-        {forecastLoading && <p>Generating forecast...</p>}
-        {forecastError && <p className="status-banner status-error">{forecastError}</p>}
+        {forecastLoading && <p>Loading forecast...</p>}
+        {forecastError && forecastError !== "No linked bank account found" && (
+          <p className="status-banner status-error">{forecastError}</p>
+        )}
+        {forecastError === "No linked bank account found" && (
+          <p className="empty-state">
+            Link a bank account (or add some manual transactions) to see your balance forecast.
+          </p>
+        )}
         {!forecastLoading && !forecastError && forecast && (
           <div className="chart-card">
             <p className="chart-subtitle">
@@ -502,7 +527,7 @@ export default function DashboardPage() {
 
       <section className="dashboard-section">
         <h2 className="section-title">Flagged anomalies</h2>
-        {anomaliesLoading && <p>Analysing for unusual transactions...</p>}
+        {anomaliesLoading && <p>Loading anomalies...</p>}
         {anomaliesError && <p className="status-banner status-error">{anomaliesError}</p>}
         {!anomaliesLoading && !anomaliesError && (
           anomalies.length === 0 ? (
@@ -511,17 +536,15 @@ export default function DashboardPage() {
             <ul className="anomaly-list">
               {anomalies.map((a) => (
                 <li key={a.anomaly_id} className="anomaly-item">
-                  <div className="anomaly-row">
-                    <div className="anomaly-main">
-                      <span className="anomaly-category">{a.category_name}</span>
-                      <span className="anomaly-merchant">{a.merchant || "-"}</span>
-                      <span className="anomaly-date">{a.txn_date}</span>
-                    </div>
-                    <div className="anomaly-side">
-                      <span className="anomaly-amount">${Math.abs(a.amount).toFixed(2)}</span>
-                    </div>
+                  <div className="anomaly-main">
+                    <span className="anomaly-category">{a.category_name}</span>
+                    <span className="anomaly-merchant">{a.merchant || "-"}</span>
+                    <span className="anomaly-date">{a.txn_date}</span>
                   </div>
-                  <p className="anomaly-reason">{a.reason}</p>
+                  <div className="anomaly-side">
+                    <span className="anomaly-amount">${Math.abs(a.amount).toFixed(2)}</span>
+                    <span className="anomaly-badge">z={a.z_score.toFixed(2)}</span>
+                  </div>
                 </li>
               ))}
             </ul>
