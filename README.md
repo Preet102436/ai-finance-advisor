@@ -110,7 +110,7 @@ over the internet (e.g. to try it on a phone).
 
 ### Manual setup (Windows, Mac, or Linux)
 
-## IMPORTANT NOTE: If you have already finance_advisor, so you may get error while first time running so, please that delete finance_advisor  DB then reinstall project using by INSTALL.bat file.
+IMPORTANT NOTE: If you have already finance_advisor, so you may get error while first time running so, please that delete finance_advisor  DB then reinstall project using by INSTALL.bat file.
 
 Prerequisites: PostgreSQL 16, Python 3.11+, Node.js 18+.
 
