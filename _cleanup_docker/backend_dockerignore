@@ -1,6 +1,0 @@
-api/.venv/
-api/.env
-api/uploads/
-**/__pycache__/
-**/*.pyc
-**/.pytest_cache/

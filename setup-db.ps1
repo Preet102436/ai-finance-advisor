@@ -9,7 +9,7 @@ $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $psql = (Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\psql.exe" | Select-Object -Last 1).FullName
 if (-not $psql) {
-    Write-Host "PostgreSQL not found in C:\Program Files\PostgreSQL. Install it first (see HOW-TO-RUN.txt)." -ForegroundColor Red
+    Write-Host "PostgreSQL not found in C:\Program Files\PostgreSQL. Install it first (see README.md)." -ForegroundColor Red
     exit 1
 }
 $env:PGPASSWORD = "postgres"
@@ -69,6 +69,13 @@ if ($hasUsers -ne "t") {
     Write-Host "   Tables created." -ForegroundColor Green
 } else {
     Write-Host "   Tables already exist." -ForegroundColor Green
+}
+
+Write-Host "4) Making sure the schema is up to date..."
+$updates = Join-Path $root "db\schema_updates.sql"
+if (Test-Path $updates) {
+    & $psql -U postgres -h localhost -d finance_advisor -v ON_ERROR_STOP=1 -q -f $updates
+    Write-Host "   Schema up to date." -ForegroundColor Green
 }
 
 Write-Host "`nDatabase ready." -ForegroundColor Cyan
