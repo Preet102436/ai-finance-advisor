@@ -1,4 +1,6 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+// Defaults to the Vite dev-server proxy (/api -> localhost:8000, see
+// vite.config.js). Set VITE_API_BASE_URL to call the backend directly.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 const TOKEN_KEY = "auth_token";
 
@@ -78,5 +80,6 @@ export const apiClient = {
   postForm: (path, formData, opts) =>
     request(path, { ...opts, method: "POST", body: formData, isFormData: true }),
   put: (path, body, opts) => request(path, { ...opts, method: "PUT", body }),
+  patch: (path, body, opts) => request(path, { ...opts, method: "PATCH", body }),
   delete: (path, opts) => request(path, { ...opts, method: "DELETE" }),
 };

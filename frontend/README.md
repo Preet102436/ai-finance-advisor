@@ -5,14 +5,14 @@ React + Vite app for the AI-Powered Personal Finance Advisor.
 ## Setup
 
 ```bash
-cp .env.example .env   # adjust VITE_API_BASE_URL if the backend isn't on localhost:8000
 npm install
 npm run dev
 ```
 
-The dev server runs on http://localhost:5173. The backend (`backend/api/`, see its
-README) must be running for Login/Register to work, and must allow this origin via
-CORS (already configured for `http://localhost:5173`).
+The dev server runs on http://localhost:5173 and proxies `/api/*` to the backend
+on http://localhost:8000 (see `vite.config.js`), so the backend (`backend/api/`)
+must be running for Login/Register to work. To call a backend elsewhere, copy
+`.env.example` to `.env` and set `VITE_API_BASE_URL`.
 
 ## Structure
 
@@ -20,5 +20,6 @@ CORS (already configured for `http://localhost:5173`).
 - `src/lib/auth.js` - register/login/logout, JWT storage (localStorage)
 - `src/components/Layout.jsx` - sidebar/nav shell for authenticated pages
 - `src/components/ProtectedRoute.jsx` - redirects to `/login` if not authenticated
-- `src/pages/` - Login, Register (working), Dashboard, Transactions, Chat, Settings
-  (placeholders for later phases)
+- `src/pages/` - Login, Register, Dashboard, Transactions, Chat, AI Insights,
+  Profile, Settings
+- `src/components/` - shared UI (top bar, summary cards, savings suggestions, etc.)

@@ -1,0 +1,13 @@
+# Normalise line endings: LF in the repo, native on checkout.
+* text=auto
+
+# Windows scripts must keep CRLF or cmd.exe / PowerShell can misbehave.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary

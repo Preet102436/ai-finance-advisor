@@ -11,7 +11,7 @@ See README.md in this directory for local Postgres setup.
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # backend/expense-ocr, backend/budgeting-forecasting, and backend/chatbot-savings
@@ -53,29 +53,32 @@ from routers import (  # noqa: E402
 app = FastAPI(title="AI-Powered Personal Finance Advisor")
 
 
-def _persist_linked_account(db, user_id, external_ref, account_type=None, account_number_display=None):
+def _persist_linked_account(db, user_id, external_ref):
     """Wired into link_account_api.py's router as on_link_success, so
     /bank/link-account/callback writes a real bank_accounts row.
 
-    Only one linked account per user is supported right now (the Dashboard,
-    /bank/sync and the forecast/insights engines all assume a single
-    account) - block a second link attempt here with a clear message rather
-    than letting it silently create a second row that later makes
-    /bank/sync ambiguous and error with a raw "pass ?account_id=" message."""
-    existing = db.query(BankAccount).filter(BankAccount.user_id == user_id).first()
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="You already have a bank account connected. Disconnect it in Settings "
-            "before linking another.",
+    Deduped: re-linking the same sandbox account updates the existing
+    bank_accounts row instead of inserting a duplicate.
+    """
+    existing = (
+        db.query(BankAccount)
+        .filter(
+            BankAccount.user_id == user_id,
+            BankAccount.provider_name == "sandbox-bank",
         )
+        .first()
+    )
+    if existing is not None:
+        existing.external_ref = external_ref
+        db.commit()
+        db.refresh(existing)
+        return existing.account_id
 
     account = BankAccount(
         user_id=user_id,
         provider_name="sandbox-bank",
         external_ref=external_ref,
-        account_type=account_type or "Everyday Checking",
-        account_number_display=account_number_display,
+        account_type="checking",
         currency="AUD",
     )
     db.add(account)
@@ -105,11 +108,11 @@ app.include_router(transactions.router)
 app.include_router(budgets.router)
 app.include_router(forecasts.router)
 app.include_router(anomalies.router)
-app.include_router(insights.router)
 app.include_router(receipts.router)
 app.include_router(chat.router)
 app.include_router(savings.router)
 app.include_router(settings.router)
+app.include_router(insights.router)
 app.include_router(link_account_router, prefix="/bank")
 app.include_router(bank.router)
 

@@ -1,4 +1,4 @@
-# Environment files
+# Environment files (secrets - never commit)
 .env
 *.env
 !.env.example
@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.pytest_cache/
 
 # Node
 node_modules/
@@ -17,5 +18,16 @@ dist/
 # Uploaded files (local dev only)
 backend/api/uploads/
 
+# Logs
+*.log
+backend_log.txt
+
+# Local build/share artifacts
+*.zip
+_to_delete/
+
 # Editor/OS
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
